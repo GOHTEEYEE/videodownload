@@ -11,7 +11,13 @@ const bundledYtDlpPath = path.join(
   'yt-dlp'
 );
 
+const projectYtDlpPath = path.join(process.cwd(), 'bin', 'yt-dlp');
+
 export function getYtDlpPath(): string {
+  if (fs.existsSync(projectYtDlpPath)) {
+    return projectYtDlpPath;
+  }
+
   if (fs.existsSync(bundledYtDlpPath)) {
     return bundledYtDlpPath;
   }

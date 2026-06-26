@@ -19,7 +19,7 @@ const nextConfig: NextConfig = {
     '*': ['./venv/**', './test-*.js', './debug-*.js', './analyze-*.js'],
   },
   outputFileTracingIncludes: {
-    '/api/**/*': ['./node_modules/youtube-dl-exec/bin/**'],
+    '/api/**/*': ['./node_modules/youtube-dl-exec/bin/**', './bin/**'],
   },
 };
 

@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev --experimental-https --experimental-https-key ./key.pem --experimental-https-cert ./cert.pem",
+    "postinstall": "node scripts/setup-ytdlp.mjs",
     "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint"
