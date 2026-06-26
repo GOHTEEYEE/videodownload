@@ -1,7 +1,5 @@
 
 import { NextResponse } from 'next/server';
-import youtubedl from 'youtube-dl-exec';
-import { execSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
@@ -11,32 +9,11 @@ import {
     resolveDouyinUrl,
     sanitizeInputUrl,
 } from '@/lib/douyin';
-import { canUseBrowserAutomation, devLog } from '@/lib/env';
+import { canUseBrowserAutomation, devLog, isVercel } from '@/lib/env';
+import { createYtDlp } from '@/lib/ytdlp';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
-
-// Helper to find yt-dlp path
-const getYtDlpPath = () => {
-    try {
-        // Check local directory first
-        const localPath = process.cwd() + '/yt-dlp';
-        if (fs.existsSync(localPath)) {
-            return localPath;
-        }
-
-        return execSync('which yt-dlp').toString().trim();
-    } catch {
-        // If which fails, try common locations
-        const paths = ['/usr/local/bin/yt-dlp', '/opt/homebrew/bin/yt-dlp'];
-        for (const p of paths) {
-            if (fs.existsSync(p)) {
-                return p;
-            }
-        }
-        return 'yt-dlp'; // Fallback to PATH
-    }
-};
 
 // Direct Douyin extraction by intercepting network requests to find video URLs
 const extractDouyinDirect = async (url: string): Promise<any> => {
@@ -250,8 +227,7 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'Please enter a valid video URL' }, { status: 400 });
         }
 
-        const binaryPath = getYtDlpPath();
-        const ytdl = youtubedl.create(binaryPath);
+        const ytdl = createYtDlp();
 
         devLog(`[API] Extracting metadata for: ${url.substring(0, 50)}...`);
 
@@ -270,7 +246,9 @@ export async function POST(req: Request) {
             referer = 'https://www.tiktok.com/';
         } else if (url.includes('douyin.com')) {
             referer = 'https://www.douyin.com/';
-            cookiesFlag.cookiesFromBrowser = 'chrome';
+            if (!isVercel()) {
+                cookiesFlag.cookiesFromBrowser = 'chrome';
+            }
         }
 
         const options: any = {
@@ -301,15 +279,11 @@ export async function POST(req: Request) {
         let output: any;
 
         if (isDouyinUrl(url)) {
-            if (canUseBrowserAutomation()) {
-                try {
-                    output = await extractDouyinNoCookie(url);
-                    return NextResponse.json(output);
-                } catch (apiErr: any) {
-                    if (process.env.NODE_ENV !== 'production') {
-                        devLog('[API] Douyin no-cookie API failed, falling back:', apiErr.message);
-                    }
-                }
+            try {
+                output = await extractDouyinNoCookie(url);
+                return NextResponse.json(output);
+            } catch (apiErr: any) {
+                devLog('[API] Douyin API failed, falling back to yt-dlp:', apiErr.message);
             }
 
             const desktopHeaders = [

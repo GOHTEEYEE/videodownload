@@ -1,4 +1,4 @@
-import { canUseBrowserAutomation } from '@/lib/env';
+import { canUseBrowserAutomation, devLog } from '@/lib/env';
 
 export const sanitizeInputUrl = (raw: string): string => {
     const trimmed = raw.trim();
@@ -102,6 +102,44 @@ type FormatCandidate = {
     note: string;
     priority: number;
     filesize?: number;
+};
+
+const fetchAwemeDetailHttp = async (awemeId: string): Promise<Record<string, any>> => {
+    const apiUrl =
+        `https://www.douyin.com/aweme/v1/web/aweme/detail/?device_platform=webapp&aid=6383` +
+        `&channel=channel_pc_web&aweme_id=${encodeURIComponent(awemeId)}`;
+
+    const response = await fetch(apiUrl, {
+        headers: {
+            'User-Agent': DOUYIN_UA_DESKTOP,
+            Referer: `https://www.douyin.com/video/${awemeId}`,
+            Accept: 'application/json, text/plain, */*',
+        },
+        redirect: 'follow',
+    });
+
+    if (!response.ok) {
+        throw new Error(`Douyin API HTTP ${response.status}`);
+    }
+
+    const data = (await response.json()) as AwemeDetailResponse;
+    if (data.aweme_detail) {
+        return data.aweme_detail;
+    }
+
+    throw new Error('Douyin API response missing aweme_detail');
+};
+
+const fetchAwemeDetail = async (pageUrl: string, awemeId: string): Promise<Record<string, any>> => {
+    if (canUseBrowserAutomation()) {
+        try {
+            return await fetchAwemeDetailWithBrowser(pageUrl);
+        } catch (browserErr) {
+            devLog('[Douyin] Browser detail fetch failed, trying HTTP API:', browserErr);
+        }
+    }
+
+    return fetchAwemeDetailHttp(awemeId);
 };
 
 const fetchAwemeDetailWithBrowser = async (pageUrl: string): Promise<Record<string, any>> => {
@@ -305,10 +343,10 @@ export const extractDouyinNoCookie = async (inputUrl: string) => {
     }
 
     const canonicalUrl = `https://www.douyin.com/video/${awemeId}`;
-    console.log(`[Douyin API] Fetching no-watermark metadata for ${canonicalUrl}...`);
-    const detail = await fetchAwemeDetailWithBrowser(canonicalUrl);
+    devLog(`[Douyin API] Fetching no-watermark metadata for ${canonicalUrl}...`);
+    const detail = await fetchAwemeDetail(canonicalUrl, awemeId);
     const result = mapAwemeDetailToExtractResult(detail, canonicalUrl);
-    console.log(`[Douyin API] Found ${result.formats.length} no-watermark streams`);
+    devLog(`[Douyin API] Found ${result.formats.length} no-watermark streams`);
     return result;
 };
 

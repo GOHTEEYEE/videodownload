@@ -3,7 +3,7 @@ import { spawn } from 'child_process';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
-import youtubedl from 'youtube-dl-exec';
+import { createYtDlp } from '@/lib/ytdlp';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -14,20 +14,6 @@ const getJobCache = () => {
     return globalAny.jobCache;
 };
 
-const getYtDlpPath = () => {
-    if (process.platform === 'darwin') {
-        const potentialPaths = [
-            '/opt/homebrew/bin/yt-dlp',
-            '/usr/local/bin/yt-dlp',
-            '/Users/gohteeyee/.nix-profile/bin/yt-dlp'
-        ];
-        for (const p of potentialPaths) {
-            if (fs.existsSync(p)) return p;
-        }
-    }
-    return 'yt-dlp';
-};
-
 export async function POST(req: Request) {
     try {
         const { url, formatId, manualAreas } = await req.json();
@@ -36,8 +22,8 @@ export async function POST(req: Request) {
         const outputPath = path.join(tempDir, 'preview.mp4');
 
         // 1. Get direct URL
-        const binaryPath = getYtDlpPath();
-        const info: any = await youtubedl(url, {
+        const ytdl = createYtDlp();
+        const info: any = await ytdl(url, {
             dumpSingleJson: true,
             format: formatId ? `${formatId}+bestaudio/best` : 'best',
             noCheckCertificates: true,

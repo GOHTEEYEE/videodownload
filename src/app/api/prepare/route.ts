@@ -4,7 +4,6 @@ import { spawn } from 'child_process';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
-import youtubedl from 'youtube-dl-exec';
 import {
     downloadDouyinNoCookie,
     downloadDouyinStream,
@@ -16,6 +15,7 @@ import {
 import { resolveAudioBitrate, resolveVideoQuality } from '@/lib/quality';
 import { buildProxyDownloadUrl, refererForUrl } from '@/lib/download-client';
 import { canUseLocalBinaries, devLog, isVercel } from '@/lib/env';
+import { createYtDlp, getYtDlpPath } from '@/lib/ytdlp';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -63,20 +63,6 @@ const getJobCache = () => {
     const globalAny: any = globalThis;
     if (!globalAny.jobCache) globalAny.jobCache = {};
     return globalAny.jobCache;
-};
-
-const getYtDlpPath = () => {
-    if (process.platform === 'darwin') {
-        const potentialPaths = [
-            '/opt/homebrew/bin/yt-dlp',
-            '/usr/local/bin/yt-dlp',
-            '/Users/gohteeyee/.nix-profile/bin/yt-dlp'
-        ];
-        for (const p of potentialPaths) {
-            if (fs.existsSync(p)) return p;
-        }
-    }
-    return 'yt-dlp';
 };
 
 // Legacy fallback: capture web player CDN stream (may include watermark)
@@ -391,8 +377,7 @@ export async function POST(req: Request) {
             const outputPath = path.join(tempDir, isAudio ? 'audio.%(ext)s' : 'video.%(ext)s');
 
             try {
-                const binaryPath = getYtDlpPath();
-                const ytdl = youtubedl.create(binaryPath);
+                const ytdl = createYtDlp();
 
                 logStore[jobId].push(`[${new Date().toLocaleTimeString()}] Stage 1: Requesting formats...`);
 
@@ -720,7 +705,7 @@ export async function POST(req: Request) {
                                 const subPath = path.join(tempDir, 'sub');
                                 const cookieArg = cookiesFilePath ? ` --cookies "${cookiesFilePath}"` : '';
                                 // Use execSync with small buffer and timeout
-                                require('child_process').execSync(`"${binaryPath}"${cookieArg} --write-subs --write-auto-subs --all-subs --skip-download --convert-subs srt -o "${subPath}" "${url}"`, { stdio: 'ignore', timeout: 30000 });
+                                require('child_process').execSync(`"${getYtDlpPath()}"${cookieArg} --write-subs --write-auto-subs --all-subs --skip-download --convert-subs srt -o "${subPath}" "${url}"`, { stdio: 'ignore', timeout: 30000 });
 
                                 const files = fs.readdirSync(tempDir);
                                 console.log(`[API] [${jobId}] Found subtitle files:`, files.filter(f => f.endsWith('.srt')));
