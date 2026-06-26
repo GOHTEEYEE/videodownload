@@ -5,8 +5,17 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "VibeDownloader - Premium 4K Video Downloader",
-  description: "Download 4K videos from any platform without watermarks. High-quality, fast, and free.",
+  title: "LUXEDOWN — The Ultimate Media Downloader",
+  description:
+    "Download videos from TikTok, Instagram, Facebook, YouTube and more. No watermark. High quality.",
+  metadataBase: new URL(process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000'),
+  openGraph: {
+    title: "LUXEDOWN — The Ultimate Media Downloader",
+    description:
+      "Download videos from TikTok, Instagram, Facebook, YouTube and more. No watermark. High quality.",
+    type: 'website',
+  },
+  robots: { index: true, follow: true },
 };
 
 export default function RootLayout({

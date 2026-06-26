@@ -1,38 +1,58 @@
 import { NextResponse } from 'next/server';
 
+export const runtime = 'nodejs';
+export const maxDuration = 60;
+
 export async function GET(req: Request) {
     const { searchParams } = new URL(req.url);
     const url = searchParams.get('url');
     const filename = searchParams.get('filename') || 'video.mp4';
+    const referer = searchParams.get('referer');
 
     if (!url) {
         return NextResponse.json({ error: 'URL is required' }, { status: 400 });
     }
 
     try {
-        const response = await fetch(url);
-
-        if (!response.ok) {
-            throw new Error(`Failed to fetch from source: ${response.statusText}`);
+        const headers: Record<string, string> = {
+            'User-Agent':
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+            Accept: '*/*',
+        };
+        if (referer) {
+            headers.Referer = referer;
         }
 
-        // Proxy the headers but force attachment and filename
-        const headers = new Headers();
-        headers.set('Content-Disposition', `attachment; filename="${encodeURIComponent(filename)}"`);
-        headers.set('Content-Type', response.headers.get('Content-Type') || 'application/octet-stream');
+        const response = await fetch(url, { headers, redirect: 'follow' });
 
-        // Optional: proxy content-length
+        if (!response.ok) {
+            return NextResponse.json(
+                { error: `Failed to fetch from source: ${response.status} ${response.statusText}` },
+                { status: 502 }
+            );
+        }
+
+        const outHeaders = new Headers();
+        outHeaders.set(
+            'Content-Disposition',
+            `attachment; filename="${encodeURIComponent(filename)}"`
+        );
+        outHeaders.set(
+            'Content-Type',
+            response.headers.get('Content-Type') || 'application/octet-stream'
+        );
+
         const contentLength = response.headers.get('Content-Length');
         if (contentLength) {
-            headers.set('Content-Length', contentLength);
+            outHeaders.set('Content-Length', contentLength);
         }
 
         return new Response(response.body, {
-            status: response.status,
-            headers,
+            status: 200,
+            headers: outHeaders,
         });
-    } catch (error: any) {
-        console.error('Proxy error:', error);
-        return NextResponse.json({ error: error.message }, { status: 500 });
+    } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : 'Proxy failed';
+        return NextResponse.json({ error: message }, { status: 500 });
     }
 }

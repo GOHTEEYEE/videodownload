@@ -1,0 +1,7 @@
+venv
+test-*.js
+debug-*.js
+analyze-*.js
+test_cookies.txt
+*.pem
+.git

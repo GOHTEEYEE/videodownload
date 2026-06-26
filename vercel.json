@@ -1,0 +1,24 @@
+{
+  "framework": "nextjs",
+  "regions": ["sin1", "hkg1", "iad1"],
+  "functions": {
+    "src/app/api/extract/route.ts": {
+      "maxDuration": 60
+    },
+    "src/app/api/prepare/route.ts": {
+      "maxDuration": 60
+    },
+    "src/app/api/proxy/route.ts": {
+      "maxDuration": 60
+    },
+    "src/app/api/progress/route.ts": {
+      "maxDuration": 10
+    },
+    "src/app/api/serve/route.ts": {
+      "maxDuration": 60
+    },
+    "src/app/api/preview-clean/route.ts": {
+      "maxDuration": 60
+    }
+  }
+}

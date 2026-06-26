@@ -16,49 +16,67 @@ const getLogStore = () => {
 export async function GET(req: Request) {
     const { searchParams } = new URL(req.url);
     const jobId = searchParams.get('jobId');
-
-    if (!jobId) return new Response('Job ID required', { status: 400 });
+    const directPath = searchParams.get('path'); // Fallback for old calls
 
     const jobCache = getJobCache();
-    const job = jobCache[jobId];
+    
+    // Find job by ID OR by direct path (less secure but helps with compatibility)
+    let job = jobId ? jobCache[jobId] : null;
+    
+    if (!job && directPath) {
+        // Try to find job in cache that matches this path
+        job = Object.values(jobCache).find((j: any) => j.filePath === directPath);
+    }
 
-    if (!job || job.status !== 'ready' || !job.filePath) {
-        return new Response('File not ready or expired', { status: 404 });
+    if (!job || !job.filePath || !fs.existsSync(job.filePath)) {
+        console.error(`[Serve] File not found. JobId: ${jobId}, Path: ${directPath}`);
+        return new Response('File not ready or expired. Please download again.', { status: 404 });
     }
 
     try {
-        const fileStream = fs.createReadStream(job.filePath);
         const stats = fs.statSync(job.filePath);
+        const fileStream = fs.createReadStream(job.filePath);
 
         // Standard compliant filename
-        const safeTitle = job.filename.replace(/[^\w\s\-\.\u4e00-\u9fa5]/g, '').trim();
+        const defaultName = job.mimeType === 'audio/mpeg' ? 'audio.mp3' : 'video.mp4';
+        const safeTitle = (job.filename || defaultName).replace(/[^\w\s\-\.\u4e00-\u9fa5]/g, '').trim() || defaultName;
         const filename = encodeURIComponent(safeTitle);
+        const contentType = job.mimeType || (safeTitle.endsWith('.mp3') ? 'audio/mpeg' : 'video/mp4');
 
-        // Clean up AFTER the file is fully sent? 
-        // With stream, we can't delete immediately. 
-        // We will schedule a cleanup after 5 minutes.
-        setTimeout(() => {
-            try {
-                if (fs.existsSync(job.tempDir)) fs.rmSync(job.tempDir, { recursive: true, force: true });
-                delete jobCache[jobId];
-                delete getLogStore()[jobId];
-            } catch (e) { console.error('Cleanup error', e); }
-        }, 5 * 60 * 1000);
+        // Cleanup: Only if it's a temp file we created
+        if (job.tempDir) {
+            setTimeout(() => {
+                try {
+                    if (fs.existsSync(job.tempDir)) fs.rmSync(job.tempDir, { recursive: true, force: true });
+                    if (jobId) {
+                        delete jobCache[jobId];
+                        delete getLogStore()[jobId];
+                    }
+                } catch (e) { console.error('Cleanup error', e); }
+            }, 10 * 60 * 1000); // Increased to 10 mins
+        }
 
-        // Browser Stream
+        // Browser Stream with proper cleanup
         const stream = new ReadableStream({
-            async start(controller) {
+            start(controller) {
                 fileStream.on('data', (chunk) => controller.enqueue(chunk));
                 fileStream.on('end', () => controller.close());
-                fileStream.on('error', (err) => controller.error(err));
+                fileStream.on('error', (err) => {
+                    console.error('Stream error:', err);
+                    controller.error(err);
+                });
+            },
+            cancel() {
+                fileStream.destroy();
             }
         });
 
         return new Response(stream, {
             headers: {
-                'Content-Type': 'video/mp4',
+                'Content-Type': contentType,
                 'Content-Disposition': `attachment; filename*=UTF-8''${filename}`,
                 'Content-Length': stats.size.toString(),
+                'Cache-Control': 'no-cache',
             },
         });
 

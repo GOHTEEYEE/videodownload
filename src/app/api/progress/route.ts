@@ -12,6 +12,8 @@ const getJobCache = () => {
     return globalAny.jobCache;
 };
 
+export const runtime = 'nodejs';
+
 export async function GET(req: Request) {
     const { searchParams } = new URL(req.url);
     const jobId = searchParams.get('jobId');
@@ -36,6 +38,10 @@ export async function GET(req: Request) {
         logs: recentLogs,
         status: isReady ? 'done' : (job?.status || 'processing'),
         progress,
-        error: job?.error
+        error: job?.error,
+        path: job?.filePath,
+        filename: job?.filename,
+        downloadUrl: job?.downloadUrl || null,
+        qualityNotice: job?.qualityNotice || null,
     });
 }
