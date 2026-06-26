@@ -131,13 +131,17 @@ export default function Home() {
   };
 
   const pollProgress = (jobId: string, filename: string, ext: string) => {
+    let idlePolls = 0;
     const interval = setInterval(async () => {
       try {
         const res = await fetch(`/api/progress?jobId=${jobId}`);
         const data = await res.json();
 
-        if (data.progress !== undefined) {
+        if (data.progress !== undefined && data.progress > 0) {
           updateJobStatus(jobId, 'processing', data.progress);
+          idlePolls = 0;
+        } else if (data.status === 'processing') {
+          idlePolls += 1;
         }
 
         if (data.qualityNotice) {
@@ -156,6 +160,11 @@ export default function Home() {
           setDownloading(false);
           updateJobStatus(jobId, 'error');
           setError(data.error || 'Processing failed');
+        } else if (idlePolls >= 90) {
+          clearInterval(interval);
+          setDownloading(false);
+          updateJobStatus(jobId, 'error');
+          setError('Download timed out. Please try again or choose a lower quality.');
         }
       } catch {
         clearInterval(interval);

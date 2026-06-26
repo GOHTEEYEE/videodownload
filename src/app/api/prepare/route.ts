@@ -17,6 +17,7 @@ import { buildProxyDownloadUrl, refererForUrl } from '@/lib/download-client';
 import { canUseLocalBinaries, devLog, isVercel } from '@/lib/env';
 import { createYtDlp, getYtDlpPath } from '@/lib/ytdlp';
 import { getFfmpegPath } from '@/lib/ffmpeg';
+import { formatResolutionLabel, pickBestMuxedFormat, parseHeight } from '@/lib/formats';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -305,6 +306,32 @@ export async function POST(req: Request) {
             }
         }
 
+        if (
+            resolvedNeedsMerge &&
+            isVercel() &&
+            Array.isArray(clientFormats) &&
+            clientFormats.length > 0
+        ) {
+            const muxed = pickBestMuxedFormat(clientFormats, Number(quality) || undefined);
+            if (muxed?.url) {
+                streamUrl = muxed.url;
+                formatId = muxed.format_id;
+                resolvedFormatExt = muxed.ext;
+                resolvedNeedsMerge = false;
+                const muxedHeight = parseHeight(muxed);
+                const muxedLabel = muxedHeight ? formatResolutionLabel(muxedHeight) : 'available quality';
+                qualityNotice =
+                    qualityNotice ||
+                    `Downloaded with audio at ${muxedLabel}. Cloud servers use a single-stream MP4 for compatibility.`;
+                if (jobCache[jobId]) {
+                    jobCache[jobId].qualityNotice = qualityNotice;
+                }
+                logStore[jobId].push(
+                    `[${new Date().toLocaleTimeString()}] Using muxed stream for cloud download (${muxedLabel}).`
+                );
+            }
+        }
+
         if (!serverProcessing && canProxyStream(streamUrl, isAudio, resolvedFormatExt, resolvedNeedsMerge)) {
             const outExt = isAudio ? 'mp3' : 'mp4';
             const safeTitle =
@@ -367,13 +394,15 @@ export async function POST(req: Request) {
             );
             jobCache[jobId] = {
                 status: 'error',
-                error: serverProcessing
+                error: resolvedNeedsMerge
+                    ? 'This quality requires merging video and audio, which is not supported on cloud hosting. Try a lower quality.'
+                    : serverProcessing
                     ? 'Translation, trim, and watermark removal require local processing and are not available in production.'
                     : 'No direct download URL available for this video. Try a different quality or provide platform cookies.',
             };
             return NextResponse.json(
                 { error: jobCache[jobId].error },
-                { status: serverProcessing ? 503 : 422 }
+                { status: serverProcessing || resolvedNeedsMerge ? 503 : 422 }
             );
         }
 

@@ -141,6 +141,34 @@ export const groupAudioFormats = (formats: MediaFormat[]): AudioOption[] => {
     }));
 };
 
+export const pickBestMuxedFormat = (
+  formats: MediaFormat[],
+  maxHeight?: number
+): MediaFormat | null => {
+  const muxed = formats.filter(
+    (f) =>
+      hasEmbeddedAudio(f) &&
+      f.vcodec &&
+      f.vcodec !== 'none' &&
+      isHttpFormat(f) &&
+      f.url
+  );
+
+  if (muxed.length === 0) return null;
+
+  const sorted = [...muxed].sort(
+    (a, b) => (parseHeight(b) || 0) - (parseHeight(a) || 0)
+  );
+
+  if (maxHeight && maxHeight > 0) {
+    const atOrBelow = sorted.filter((f) => (parseHeight(f) || 0) <= maxHeight);
+    if (atOrBelow.length > 0) return atOrBelow[0];
+    return sorted[sorted.length - 1] ?? null;
+  }
+
+  return sorted[0] ?? null;
+};
+
 export const pickBestVideo = (
   formats: MediaFormat[],
   extractorKey?: string

@@ -28,7 +28,7 @@ export function toAbsoluteDownloadUrl(href: string): string {
 
 export function isMobileDevice(): boolean {
   if (typeof navigator === 'undefined') return false;
-  return /iPhone|iPad|iPod|Android|Mobile/i.test(navigator.userAgent);
+  return /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 }
 
 export function isInAppBrowser(): boolean {
