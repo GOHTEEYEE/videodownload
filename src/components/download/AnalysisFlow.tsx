@@ -9,6 +9,7 @@ import {
   type AudioQualityChoice,
 } from '@/lib/quality';
 import { formatResolutionLabel } from '@/lib/formats';
+import { mobileDownloadHint, type ReadyDownload } from '@/lib/download-client';
 import type { MediaType } from '@/components/download/DownloadPanel';
 
 const ease = [0.25, 0.1, 0.25, 1] as const;
@@ -35,6 +36,7 @@ interface AnalysisFlowProps {
   downloading: boolean;
   qualityNotice: string | null;
   error: string | null;
+  readyDownload?: ReadyDownload | null;
 }
 
 function qualityLabel(
@@ -62,14 +64,18 @@ export default function AnalysisFlow({
   downloading,
   qualityNotice,
   error,
+  readyDownload,
 }: AnalysisFlowProps) {
   const author =
     videoInfo?.uploader || videoInfo?.channel || videoInfo?.creator || null;
-  const statusText = analyzing
+  const statusText = readyDownload
+    ? null
+    : analyzing
     ? 'Checking video source…'
     : downloading
       ? 'Preparing your download…'
       : null;
+  const mobileHint = mobileDownloadHint();
 
   return (
     <motion.div
@@ -132,6 +138,24 @@ export default function AnalysisFlow({
           </motion.div>
         )}
       </AnimatePresence>
+
+      {readyDownload && (
+        <motion.div
+          className="analysis-download-wrap"
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3, ease }}
+        >
+          <a
+            className="analysis-download-btn"
+            href={readyDownload.url}
+            rel="noopener noreferrer"
+          >
+            Tap to save {mediaType === 'video' ? 'MP4' : 'MP3'}
+          </a>
+          {mobileHint && <p className="analysis-download-hint">{mobileHint}</p>}
+        </motion.div>
+      )}
 
       {(qualityNotice || error) && (
         <div className="panel-hero-messages">

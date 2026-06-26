@@ -1605,6 +1605,53 @@ button {
   color: var(--text-muted);
 }
 
+.queue-download-btn {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--gradient-soft);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+  text-decoration: none;
+}
+
+.analysis-download-wrap {
+  margin-top: 16px;
+}
+
+.analysis-download-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 52px;
+  padding: 14px 20px;
+  border-radius: 14px;
+  background: var(--gradient-soft);
+  color: #fff;
+  font-size: 16px;
+  font-weight: 700;
+  text-decoration: none;
+  box-shadow: 0 8px 24px rgba(124, 58, 237, 0.28);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.analysis-download-btn:active {
+  transform: scale(0.98);
+}
+
+.analysis-download-hint {
+  margin-top: 10px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text-muted);
+  text-align: center;
+}
+
 .queue-download-link {
   display: inline-block;
   margin-top: 4px;
@@ -1748,5 +1795,6 @@ button {
     left: 16px;
     right: 16px;
     width: auto;
+    bottom: calc(16px + env(safe-area-inset-bottom, 0px));
   }
 }

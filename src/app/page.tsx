@@ -13,7 +13,11 @@ import {
   type VideoQualityChoice,
   type AudioQualityChoice,
 } from '@/lib/quality';
-import { triggerBrowserDownload } from '@/lib/download-client';
+import {
+  triggerBrowserDownload,
+  toAbsoluteDownloadUrl,
+  type ReadyDownload,
+} from '@/lib/download-client';
 
 interface BackgroundJob {
   id: string;
@@ -49,6 +53,7 @@ export default function Home() {
   const [backgroundJobs, setBackgroundJobs] = useState<BackgroundJob[]>([]);
   const [cookiesText, setCookiesText] = useState('');
   const [downloadFlowActive, setDownloadFlowActive] = useState(false);
+  const [readyDownload, setReadyDownload] = useState<ReadyDownload | null>(null);
   const extractUrlRef = useRef<string>('');
 
   useEffect(() => {
@@ -97,6 +102,20 @@ export default function Home() {
     }
   }, [url]);
 
+  const offerDownload = (downloadUrl: string, filename: string) => {
+    const absoluteUrl = toAbsoluteDownloadUrl(downloadUrl);
+    const started = triggerBrowserDownload(absoluteUrl, filename);
+    if (!started) {
+      setReadyDownload({ url: absoluteUrl, filename });
+      requestAnimationFrame(() => {
+        document.querySelector('.analysis-download-btn')?.scrollIntoView({
+          behavior: 'smooth',
+          block: 'center',
+        });
+      });
+    }
+  };
+
   const updateJobStatus = (id: string, status: BackgroundJob['status'], progress?: number) => {
     setBackgroundJobs((prev) =>
       prev.map((job) =>
@@ -131,7 +150,7 @@ export default function Home() {
           const downloadUrl = data.downloadUrl || `/api/serve?jobId=${jobId}`;
           updateJobFields(jobId, { status: 'done', progress: 100, downloadUrl });
 
-          triggerBrowserDownload(downloadUrl, data.filename || `${filename}.${ext}`);
+          offerDownload(downloadUrl, data.filename || `${filename}.${ext}`);
         } else if (data.status === 'error') {
           clearInterval(interval);
           setDownloading(false);
@@ -152,6 +171,7 @@ export default function Home() {
 
     setError('');
     setQualityNotice(null);
+    setReadyDownload(null);
     setDownloadFlowActive(true);
 
     let info = videoInfo;
@@ -220,7 +240,7 @@ export default function Home() {
           downloadUrl: data.downloadUrl,
         });
         if (data.qualityNotice) setQualityNotice(data.qualityNotice);
-        triggerBrowserDownload(data.downloadUrl, `${title}.${ext}`);
+        offerDownload(data.downloadUrl, `${title}.${ext}`);
         return;
       }
 
@@ -261,6 +281,7 @@ export default function Home() {
         downloadFlowActive={downloadFlowActive}
         qualityNotice={qualityNotice}
         error={error}
+        readyDownload={readyDownload}
         onDownload={handleDownload}
       />
 
@@ -302,8 +323,11 @@ export default function Home() {
                         : `${Math.round(job.progress)}%`}
                   </div>
                   {job.status === 'done' && job.downloadUrl && (
-                    <a className="queue-download-link" href={job.downloadUrl} download>
-                      Download file
+                    <a
+                      className="queue-download-btn"
+                      href={toAbsoluteDownloadUrl(job.downloadUrl)}
+                    >
+                      Tap to save file
                     </a>
                   )}
                 </div>

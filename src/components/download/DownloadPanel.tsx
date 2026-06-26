@@ -10,6 +10,7 @@ import {
   type VideoQualityChoice,
   type AudioQualityChoice,
 } from '@/lib/quality';
+import type { ReadyDownload } from '@/lib/download-client';
 
 export type MediaType = 'video' | 'audio';
 export type SubtitleLanguage = 'original' | 'en' | 'zh' | 'ms';
@@ -32,6 +33,7 @@ interface DownloadPanelProps {
   downloading: boolean;
   qualityNotice: string | null;
   error: string | null;
+  readyDownload?: ReadyDownload | null;
   onDownload: () => void;
   downloadFlowActive?: boolean;
   variant?: 'default' | 'hero';
@@ -59,6 +61,7 @@ export default function DownloadPanel({
   error,
   onDownload,
   downloadFlowActive = false,
+  readyDownload = null,
   variant = 'default',
 }: DownloadPanelProps) {
   const busy = analyzing || downloading;
@@ -100,6 +103,7 @@ export default function DownloadPanel({
           downloading={downloading}
           qualityNotice={qualityNotice}
           error={error}
+          readyDownload={readyDownload}
         />
       );
     }

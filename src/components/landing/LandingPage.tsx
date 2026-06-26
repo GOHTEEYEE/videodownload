@@ -12,6 +12,7 @@ import DownloadPanel, {
   type SubtitleLanguage,
 } from '@/components/download/DownloadPanel';
 import type { VideoInfo } from '@/components/download/AnalysisFlow';
+import type { ReadyDownload } from '@/lib/download-client';
 import type { VideoQualityChoice, AudioQualityChoice } from '@/lib/quality';
 import {
   TikTokIcon,
@@ -87,6 +88,7 @@ interface LandingPageProps {
   downloadFlowActive?: boolean;
   qualityNotice: string | null;
   error: string | null;
+  readyDownload?: ReadyDownload | null;
   onDownload: () => void;
 }
 
