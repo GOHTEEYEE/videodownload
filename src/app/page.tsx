@@ -82,10 +82,12 @@ export default function Home() {
       extractUrlRef.current = cleaned;
       setVideoInfo(data);
       return data;
-    } catch (err: any) {
+    } catch (err: unknown) {
       setVideoInfo(null);
       extractUrlRef.current = '';
-      setError(err.message);
+      const message =
+        err instanceof Error ? err.message : 'Failed to analyze video';
+      setError(message);
       setDownloadFlowActive(false);
       return null;
     } finally {
@@ -254,10 +256,10 @@ export default function Home() {
       }
 
       pollProgress(jobId, title, ext);
-    } catch {
+    } catch (err: unknown) {
       setDownloading(false);
       updateJobStatus(jobId, 'error');
-      setError('Download failed. Please try again.');
+      setError(err instanceof Error ? err.message : 'Download failed. Please try again.');
     }
   };
 

@@ -15,6 +15,84 @@ import { createYtDlp } from '@/lib/ytdlp';
 export const runtime = 'nodejs';
 export const maxDuration = 60;
 
+const isYouTubeUrl = (url: string) => /youtube\.com|youtu\.be/i.test(url);
+const isTikTokUrl = (url: string) => /tiktok\.com/i.test(url);
+
+const youtubeClientStrategies = ['android,web', 'ios', 'tv_embedded', 'mweb'];
+
+const runYtDlpExtract = async (
+    ytdl: ReturnType<typeof createYtDlp>,
+    url: string,
+    baseOptions: Record<string, unknown>
+) => {
+    if (!isYouTubeUrl(url)) {
+        return ytdl(url, baseOptions as any);
+    }
+
+    let lastError: unknown;
+    for (const client of youtubeClientStrategies) {
+        try {
+            const options = {
+                ...baseOptions,
+                extractorArgs: {
+                    ...(baseOptions.extractorArgs as Record<string, string[]> | undefined),
+                    youtube: [`player_client=${client}`],
+                },
+            };
+            devLog(`[API] YouTube extract try player_client=${client}`);
+            return await ytdl(url, options as any);
+        } catch (error) {
+            lastError = error;
+        }
+    }
+
+    throw lastError;
+};
+
+const mapExtractError = (errorMessage: string, requestUrl: string) => {
+    const douyinHint = isDouyinUrl(requestUrl);
+    const youtubeHint = isYouTubeUrl(requestUrl);
+    const tiktokHint = isTikTokUrl(requestUrl);
+
+    if (errorMessage.includes('not a valid URL') || errorMessage.includes('Unsupported URL')) {
+        return { status: 400, error: 'Invalid or unsupported video URL.' };
+    }
+    if (errorMessage.includes('Private video') || errorMessage.includes('This video is private')) {
+        return { status: 403, error: 'This video is private and cannot be downloaded.' };
+    }
+    if (errorMessage.includes('Video unavailable') || errorMessage.includes('has been removed')) {
+        return { status: 404, error: 'This video is unavailable or has been removed.' };
+    }
+    if (
+        errorMessage.includes('IP address is blocked') ||
+        errorMessage.includes('blocked from accessing')
+    ) {
+        return {
+            status: 503,
+            error: tiktokHint
+                ? 'TikTok blocked the server IP. Try again later or use a different video.'
+                : 'This platform blocked the server. Please try again later.',
+        };
+    }
+    if (
+        errorMessage.includes('Fresh cookies') ||
+        errorMessage.includes('Sign in to confirm') ||
+        errorMessage.includes('bot') ||
+        errorMessage.includes('HTTP Error 429')
+    ) {
+        return {
+            status: 429,
+            error: douyinHint
+                ? 'Douyin security check triggered. Try again later or provide browser cookies.'
+                : youtubeHint
+                  ? 'YouTube blocked automated access. Wait a few minutes and try again, or try another link.'
+                  : 'This platform requires verification. Try again later or use browser cookies.',
+        };
+    }
+
+    return { status: 500, error: errorMessage };
+};
+
 // Direct Douyin extraction by intercepting network requests to find video URLs
 const extractDouyinDirect = async (url: string): Promise<any> => {
     if (!canUseBrowserAutomation()) {
@@ -233,11 +311,15 @@ export async function POST(req: Request) {
 
         // Determine referer based on URL
         let referer = 'https://www.youtube.com/';
-        let extraArgs: any = {
-            'tiktok': ['no-watermark'],
-            'bilibili': ['no-watermark'],
-            'douyin': ['no-watermark']
+        let extraArgs: Record<string, string[]> = {
+            tiktok: ['no-watermark'],
+            bilibili: ['no-watermark'],
+            douyin: ['no-watermark'],
         };
+
+        if (isYouTubeUrl(url)) {
+            extraArgs.youtube = ['player_client=android,web'];
+        }
 
         const cookiesFlag: any = {};
         if (url.includes('bilibili.com') || url.includes('b23.tv')) {
@@ -299,7 +381,7 @@ export async function POST(req: Request) {
                 else devLog('[API] Trying no-cookie request...');
 
                 options.addHeader = desktopHeaders;
-                output = await ytdl(url, options);
+                output = await runYtDlpExtract(ytdl, url, options);
             } catch (e: any) {
                 devLog('[API] Desktop attempt failed. Switching to Mobile strategy...');
 
@@ -312,7 +394,7 @@ export async function POST(req: Request) {
                             'user-agent:Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
                             'referer:https://www.douyin.com/'
                         ];
-                        output = await ytdl(url, mobileOptions);
+                        output = await runYtDlpExtract(ytdl, url, mobileOptions);
                         devLog('[API] Mobile strategy with provided cookies successful!');
                         return NextResponse.json(output);
                     } catch (mobileCookieErr: any) {
@@ -329,7 +411,7 @@ export async function POST(req: Request) {
                         'user-agent:Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
                         'referer:https://www.douyin.com/'
                     ];
-                    output = await ytdl(url, mobileOptions);
+                    output = await runYtDlpExtract(ytdl, url, mobileOptions);
                     devLog('[API] Mobile strategy successful!');
                 } catch (mobileErr: any) {
                     // 3. Try Puppeteer Cookies + Retry
@@ -348,7 +430,7 @@ export async function POST(req: Request) {
                         retryOptions.addHeader = desktopHeaders;
 
                         devLog('[API] Retrying extraction with fresh cookies...');
-                        output = await ytdl(url, retryOptions);
+                        output = await runYtDlpExtract(ytdl, url, retryOptions);
                         devLog('[API] Puppeteer Cookie strategy successful!');
 
                     } catch (pe: any) {
@@ -369,7 +451,7 @@ export async function POST(req: Request) {
                 `referer:${referer}`,
                 'user-agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
             ];
-            output = await ytdl(url, options);
+            output = await runYtDlpExtract(ytdl, url, options);
         }
 
         devLog(`[API] Successfully extracted metadata for: ${output.title}`);
@@ -378,21 +460,11 @@ export async function POST(req: Request) {
     } catch (error: any) {
         console.error('Extraction error:', error);
         const errorMessage = error.stderr || error.message || 'Failed to extract video information';
-
-        if (errorMessage.includes('not a valid URL')) {
-            return NextResponse.json({ error: 'Invalid URL provided' }, { status: 400 });
-        }
-        if (errorMessage.includes('Fresh cookies') || errorMessage.includes('Sign in to confirm')) {
-            const douyinHint = isDouyinUrl(requestUrl);
-            return NextResponse.json({
-                error: douyinHint
-                    ? 'Douyin security check triggered. Please provide fresh cookies from your browser (ttwid, __ac_nonce, etc).'
-                    : 'This platform requires browser cookies. Try exporting cookies from your browser while logged in.',
-                details: errorMessage
-            }, { status: 429 });
-        }
-
-        return NextResponse.json({ error: errorMessage }, { status: 500 });
+        const mapped = mapExtractError(errorMessage, requestUrl);
+        return NextResponse.json(
+            { error: mapped.error, details: errorMessage },
+            { status: mapped.status }
+        );
     } finally {
         try {
             if (cookiesFilePath && fs.existsSync(cookiesFilePath)) {
