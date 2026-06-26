@@ -16,6 +16,7 @@ import { resolveAudioBitrate, resolveVideoQuality } from '@/lib/quality';
 import { buildProxyDownloadUrl, refererForUrl } from '@/lib/download-client';
 import { canUseLocalBinaries, devLog, isVercel } from '@/lib/env';
 import { createYtDlp, getYtDlpPath } from '@/lib/ytdlp';
+import { getFfmpegPath } from '@/lib/ffmpeg';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -38,9 +39,11 @@ const needsServerProcessing = (body: {
 const canProxyStream = (
     streamUrl: string | undefined,
     isAudio: boolean,
-    formatExt?: string
+    formatExt?: string,
+    needsAudioMerge?: boolean
 ): boolean => {
     if (!streamUrl || streamUrl.includes('playwm')) return false;
+    if (needsAudioMerge) return false;
     if (!isAudio) return true;
     const ext = (formatExt || '').toLowerCase();
     return (
@@ -239,11 +242,12 @@ const getFreshDouyinCookies = async (url: string, log: (msg: string) => void) =>
 export async function POST(req: Request) {
     try {
         const body = await req.json();
-        let { jobId: clientJobId, url, quality, formatId, start, end, title, removeWatermark, manualAreas, isBilibili, enableTranslate, cookiesText, streamUrl, mediaType, preferredHeight, preferredBitrate, formats: clientFormats, formatExt } = body;
+        let { jobId: clientJobId, url, quality, formatId, start, end, title, removeWatermark, manualAreas, isBilibili, enableTranslate, cookiesText, streamUrl, mediaType, preferredHeight, preferredBitrate, formats: clientFormats, formatExt, needsAudioMerge } = body;
         const isAudio = mediaType === 'audio';
 
         let qualityNotice: string | null = null;
         let resolvedFormatExt = formatExt as string | undefined;
+        let resolvedNeedsMerge = Boolean(needsAudioMerge);
         if (Array.isArray(clientFormats) && clientFormats.length > 0) {
             if (isAudio && preferredBitrate !== undefined) {
                 const resolved = resolveAudioBitrate(preferredBitrate, clientFormats);
@@ -252,6 +256,7 @@ export async function POST(req: Request) {
                 formatId = resolved.format?.format_id;
                 if (!streamUrl) streamUrl = resolved.format?.url;
                 resolvedFormatExt = resolved.format?.ext;
+                resolvedNeedsMerge = false;
             } else if (!isAudio && preferredHeight !== undefined) {
                 const resolved = resolveVideoQuality(preferredHeight, clientFormats);
                 qualityNotice = resolved.notice;
@@ -259,6 +264,7 @@ export async function POST(req: Request) {
                 formatId = resolved.format?.format_id;
                 streamUrl = resolved.format?.url;
                 resolvedFormatExt = resolved.format?.ext;
+                resolvedNeedsMerge = resolved.needsAudioMerge;
             }
         }
         devLog('[prepare] streamUrl:', streamUrl ? `${streamUrl.substring(0, 80)}...` : 'none');
@@ -299,7 +305,7 @@ export async function POST(req: Request) {
             }
         }
 
-        if (!serverProcessing && canProxyStream(streamUrl, isAudio, resolvedFormatExt)) {
+        if (!serverProcessing && canProxyStream(streamUrl, isAudio, resolvedFormatExt, resolvedNeedsMerge)) {
             const outExt = isAudio ? 'mp3' : 'mp4';
             const safeTitle =
                 (title || (isAudio ? 'audio' : 'video')).replace(/[<>:"/\\|?*]/g, '').trim() ||
@@ -323,7 +329,7 @@ export async function POST(req: Request) {
             return NextResponse.json({ jobId, direct: true, downloadUrl, qualityNotice });
         }
 
-        if (isVercel() && !canUseLocalBinaries()) {
+        if (isVercel() && !canUseLocalBinaries() && !resolvedNeedsMerge) {
             if (isDouyinUrl(url)) {
                 try {
                     const metadata = await extractDouyinNoCookie(url);
@@ -427,15 +433,19 @@ export async function POST(req: Request) {
                     noCheckCertificates: true,
                     noWarnings: true,
                     noPlaylist: true,
-                    ffmpegLocation: '/opt/homebrew/bin/ffmpeg',
                     concurrentFragments: 8,
-                    postprocessorArgs: ['ffmpeg:-threads 8 -cpu-used 5'],
                     extractorArgs: {
                         'tiktok': ['no-watermark'],
                         'bilibili': ['no-watermark'],
                         'douyin': ['no-watermark']
                     }
                 };
+
+                const ffmpegPath = getFfmpegPath();
+                if (ffmpegPath) {
+                    options.ffmpegLocation = ffmpegPath;
+                    options.postprocessorArgs = ['ffmpeg:-threads 4'];
+                }
 
                 if (isAudio) {
                     options.format = formatId && formatId !== 'bestaudio' ? formatId : 'bestaudio/best';

@@ -4,6 +4,8 @@ import {
   groupVideoFormats,
   formatResolutionLabel,
   pickBestVideo,
+  hasEmbeddedAudio,
+  formatNeedsAudioMerge,
 } from './formats';
 
 export const QUALITY_BEST = 'best' as const;
@@ -49,6 +51,7 @@ export type QualityResolution = {
   actualLabel: string;
   format: MediaFormat | null;
   notice: string | null;
+  needsAudioMerge: boolean;
 };
 
 export const FALLBACK_NOTICE = 'Downloaded in the highest available quality.';
@@ -92,10 +95,15 @@ export const pickFormatForHeight = (
   if (exact) return exact.format;
 
   const atOrBelow = grouped.filter((g) => g.height <= height);
-  if (atOrBelow.length > 0) return atOrBelow[0].format;
+  if (atOrBelow.length > 0) {
+    const muxed = atOrBelow.find((g) => hasEmbeddedAudio(g.format));
+    return (muxed || atOrBelow[0]).format;
+  }
 
   return grouped[0].format;
 };
+
+export { formatNeedsAudioMerge, hasEmbeddedAudio };
 
 export const pickFormatForBitrate = (
   formats: MediaFormat[],
@@ -156,6 +164,11 @@ export const resolveVideoQuality = (
     notice = FALLBACK_NOTICE;
   }
 
+  const needsAudioMerge = formatNeedsAudioMerge(format);
+  if (needsAudioMerge && !notice) {
+    notice = 'Merging video and audio for full MP4 with sound.';
+  }
+
   return {
     requested: requestedHeight,
     actual: actualHeight,
@@ -163,6 +176,7 @@ export const resolveVideoQuality = (
     actualLabel: labelForHeight(actualHeight),
     format,
     notice,
+    needsAudioMerge,
   };
 };
 
@@ -191,6 +205,7 @@ export const resolveAudioBitrate = (
     actualLabel: available.length > 0 ? labelForBitrate(actualAbr) : 'best available',
     format,
     notice,
+    needsAudioMerge: false,
   };
 };
 

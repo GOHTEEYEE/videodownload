@@ -197,6 +197,7 @@ export default function Home() {
           streamUrl: resolved.format?.url,
           formatExt: resolved.format?.ext,
           formatId: resolved.format?.format_id,
+          needsAudioMerge: mediaType === 'video' ? resolved.needsAudioMerge : false,
           quality: resolved.actual,
           preferredHeight: mediaType === 'video' ? videoQuality : undefined,
           preferredBitrate: mediaType === 'audio' ? audioQuality : undefined,

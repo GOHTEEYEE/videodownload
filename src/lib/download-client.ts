@@ -42,9 +42,11 @@ export function canDownloadDirectly(options: {
   formatExt?: string;
   needsTranslation?: boolean;
   needsWatermarkRemoval?: boolean;
+  needsAudioMerge?: boolean;
 }): boolean {
   if (!options.streamUrl) return false;
   if (options.needsTranslation || options.needsWatermarkRemoval) return false;
+  if (options.needsAudioMerge) return false;
   if (options.mediaType === 'video') return true;
   const ext = (options.formatExt || '').toLowerCase();
   return ext === 'mp3' || ext === 'm4a' || options.streamUrl.includes('.mp3');

@@ -30,6 +30,19 @@ export type AudioOption = {
 const isHttpFormat = (f: MediaFormat) =>
   !f.protocol || f.protocol === 'https' || f.protocol === 'http';
 
+export const hasEmbeddedAudio = (format: MediaFormat | null | undefined): boolean =>
+  Boolean(format?.acodec && format.acodec !== 'none');
+
+export const isVideoOnlyFormat = (format: MediaFormat | null | undefined): boolean =>
+  Boolean(
+    format?.vcodec &&
+      format.vcodec !== 'none' &&
+      (!format.acodec || format.acodec === 'none')
+  );
+
+export const formatNeedsAudioMerge = (format: MediaFormat | null | undefined): boolean =>
+  isVideoOnlyFormat(format);
+
 export const parseHeight = (format: MediaFormat): number | null => {
   if (format.height) return format.height;
   const match = format.resolution?.match(/(\d+)x(\d+)/i);
@@ -45,7 +58,8 @@ export const formatResolutionLabel = (height: number): string => {
 
 const formatScore = (f: MediaFormat): number => {
   let score = 0;
-  if (f.acodec && f.acodec !== 'none') score += 100;
+  if (hasEmbeddedAudio(f)) score += 10_000;
+  if (isVideoOnlyFormat(f)) score -= 5_000;
   if (!f.format_note?.toLowerCase().includes('watermark')) score += 50;
   if (f.format_note?.toLowerCase().includes('play api')) score += 40;
   score += (f.filesize || f.filesize_approx || 0) / 1_000_000;
@@ -62,7 +76,22 @@ export const groupVideoFormats = (formats: MediaFormat[]): VideoOption[] => {
     if (format.vcodec === 'none') continue;
 
     const existing = byHeight.get(height);
-    if (!existing || formatScore(format) > formatScore(existing)) {
+    if (!existing) {
+      byHeight.set(height, format);
+      continue;
+    }
+
+    const candidateMuxed = hasEmbeddedAudio(format);
+    const existingMuxed = hasEmbeddedAudio(existing);
+    if (candidateMuxed && !existingMuxed) {
+      byHeight.set(height, format);
+      continue;
+    }
+    if (!candidateMuxed && existingMuxed) {
+      continue;
+    }
+
+    if (formatScore(format) > formatScore(existing)) {
       byHeight.set(height, format);
     }
   }
