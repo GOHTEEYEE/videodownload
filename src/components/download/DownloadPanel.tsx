@@ -33,9 +33,11 @@ interface DownloadPanelProps {
   downloading: boolean;
   qualityNotice: string | null;
   error: string | null;
-  readyDownload?: ReadyDownload | null;
   onDownload: () => void;
   downloadFlowActive?: boolean;
+  readyDownload?: ReadyDownload | null;
+  cookiesText?: string;
+  setCookiesText?: (v: string) => void;
   variant?: 'default' | 'hero';
 }
 
@@ -62,10 +64,32 @@ export default function DownloadPanel({
   onDownload,
   downloadFlowActive = false,
   readyDownload = null,
+  cookiesText = '',
+  setCookiesText,
   variant = 'default',
 }: DownloadPanelProps) {
   const busy = analyzing || downloading;
   const isHero = variant === 'hero';
+  const showCookiesField =
+    Boolean(setCookiesText) &&
+    (Boolean(error) || /youtube|douyin|tiktok|cookie|block/i.test(url));
+
+  const cookiesField = showCookiesField ? (
+    <details className="panel-cookies-advanced">
+      <summary>Advanced: browser cookies (optional)</summary>
+      <p className="panel-cookies-hint">
+        Only needed when a platform blocks the server. Export cookies while logged in on that site.
+      </p>
+      <textarea
+        className="panel-cookies-input"
+        value={cookiesText}
+        onChange={(e) => setCookiesText?.(e.target.value)}
+        placeholder="Paste Netscape cookies.txt content or Cookie: header value"
+        rows={3}
+        spellCheck={false}
+      />
+    </details>
+  ) : null;
   const qualityOptions =
     mediaType === 'video'
       ? isHero
@@ -104,6 +128,8 @@ export default function DownloadPanel({
           qualityNotice={qualityNotice}
           error={error}
           readyDownload={readyDownload}
+          cookiesText={cookiesText}
+          setCookiesText={setCookiesText}
         />
       );
     }
@@ -223,6 +249,7 @@ export default function DownloadPanel({
             {error && <p className="panel-error" role="alert">{error}</p>}
           </div>
         )}
+        {cookiesField}
       </div>
     );
   }
@@ -340,6 +367,8 @@ export default function DownloadPanel({
       {error && (
         <p className="panel-error" role="alert">{error}</p>
       )}
+
+      {cookiesField}
 
       <button
         type="button"

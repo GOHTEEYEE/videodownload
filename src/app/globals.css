@@ -1660,6 +1660,36 @@ button {
   color: var(--purple);
 }
 
+.panel-cookies-advanced {
+  margin-top: 12px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.panel-cookies-advanced summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.panel-cookies-hint {
+  margin: 8px 0;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.panel-cookies-input {
+  width: 100%;
+  min-height: 72px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  resize: vertical;
+  background: #fafafa;
+}
+
 /* Responsive */
 
 @media (max-width: 900px) {

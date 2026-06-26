@@ -77,16 +77,21 @@ const mapExtractError = (errorMessage: string, requestUrl: string) => {
     if (
         errorMessage.includes('Fresh cookies') ||
         errorMessage.includes('Sign in to confirm') ||
+        errorMessage.includes('sign in') ||
+        errorMessage.includes('Login required') ||
+        errorMessage.includes('requires cookies') ||
+        errorMessage.includes('browser cookies') ||
         errorMessage.includes('bot') ||
-        errorMessage.includes('HTTP Error 429')
+        errorMessage.includes('HTTP Error 429') ||
+        errorMessage.includes('HTTP Error 403')
     ) {
         return {
             status: 429,
             error: douyinHint
                 ? 'Douyin security check triggered. Try again later or provide browser cookies.'
                 : youtubeHint
-                  ? 'YouTube blocked automated access. Wait a few minutes and try again, or try another link.'
-                  : 'This platform requires verification. Try again later or use browser cookies.',
+                  ? 'YouTube is blocking cloud servers (not your account). Wait a few minutes, try another video, or paste YouTube cookies in Advanced settings below.'
+                  : 'This platform blocked automated access. Try again later.',
         };
     }
 

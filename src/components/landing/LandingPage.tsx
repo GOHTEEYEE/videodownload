@@ -89,6 +89,8 @@ interface LandingPageProps {
   qualityNotice: string | null;
   error: string | null;
   readyDownload?: ReadyDownload | null;
+  cookiesText?: string;
+  setCookiesText?: (v: string) => void;
   onDownload: () => void;
 }
 

@@ -37,6 +37,8 @@ interface AnalysisFlowProps {
   qualityNotice: string | null;
   error: string | null;
   readyDownload?: ReadyDownload | null;
+  cookiesText?: string;
+  setCookiesText?: (v: string) => void;
 }
 
 function qualityLabel(
@@ -65,6 +67,8 @@ export default function AnalysisFlow({
   qualityNotice,
   error,
   readyDownload,
+  cookiesText = '',
+  setCookiesText,
 }: AnalysisFlowProps) {
   const author =
     videoInfo?.uploader || videoInfo?.channel || videoInfo?.creator || null;
@@ -162,6 +166,23 @@ export default function AnalysisFlow({
           {qualityNotice && <p className="panel-notice">{qualityNotice}</p>}
           {error && <p className="panel-error" role="alert">{error}</p>}
         </div>
+      )}
+
+      {setCookiesText && (error || /youtube|douyin|tiktok/i.test(url)) && (
+        <details className="panel-cookies-advanced">
+          <summary>Advanced: browser cookies (optional)</summary>
+          <p className="panel-cookies-hint">
+            Only needed when a platform blocks the server. Export cookies while logged in on that site.
+          </p>
+          <textarea
+            className="panel-cookies-input"
+            value={cookiesText}
+            onChange={(e) => setCookiesText(e.target.value)}
+            placeholder="Paste Netscape cookies.txt content or Cookie: header value"
+            rows={3}
+            spellCheck={false}
+          />
+        </details>
       )}
     </motion.div>
   );

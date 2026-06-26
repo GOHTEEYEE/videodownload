@@ -293,6 +293,8 @@ export default function Home() {
         qualityNotice={qualityNotice}
         error={error}
         readyDownload={readyDownload}
+        cookiesText={cookiesText}
+        setCookiesText={setCookiesText}
         onDownload={handleDownload}
       />
 
