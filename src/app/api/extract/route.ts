@@ -64,6 +64,16 @@ const mapExtractError = (errorMessage: string, requestUrl: string) => {
         return { status: 404, error: 'This video is unavailable or has been removed.' };
     }
     if (
+        errorMessage.includes('status code 10231') ||
+        errorMessage.includes('10231')
+    ) {
+        return {
+            status: 503,
+            error:
+                'TikTok blocked the cloud server for this video. Open TikTok in your browser, export cookies, paste them under Advanced, then try again.',
+        };
+    }
+    if (
         errorMessage.includes('IP address is blocked') ||
         errorMessage.includes('blocked from accessing')
     ) {
