@@ -15,6 +15,7 @@ import {
 import { resolveAudioBitrate, resolveVideoQuality } from '@/lib/quality';
 import { buildProxyDownloadUrl, refererForUrl } from '@/lib/download-client';
 import { canUseLocalBinaries, devLog, isVercel } from '@/lib/env';
+import { applyCookiesToYtDlpOptions, resolveCookiesForRequest } from '@/lib/cookie-store';
 import { createYtDlp, getYtDlpPath } from '@/lib/ytdlp';
 import { getFfmpegPath } from '@/lib/ffmpeg';
 import { formatResolutionLabel, pickBestMuxedFormat, parseHeight } from '@/lib/formats';
@@ -491,15 +492,13 @@ export async function POST(req: Request) {
                 }
 
                 let cookiesFilePath: string | null = null;
-                if (cookiesText && typeof cookiesText === 'string' && cookiesText.trim().length > 0) {
-                    if (cookiesText.startsWith('# Netscape') || cookiesText.includes('\t')) {
-                        cookiesFilePath = path.join(tempDir, 'cookies.txt');
-                        fs.writeFileSync(cookiesFilePath, cookiesText.trim());
-                        options.cookies = cookiesFilePath;
-                    } else {
-                        if (!options.addHeader) options.addHeader = [];
-                        options.addHeader.push(`Cookie:${cookiesText.trim()}`);
-                    }
+                const resolvedCookies = resolveCookiesForRequest(activeUrl, cookiesText);
+                if (resolvedCookies.cookiesText) {
+                    cookiesFilePath = applyCookiesToYtDlpOptions(
+                        options,
+                        resolvedCookies.cookiesText,
+                        tempDir
+                    );
                 }
 
                 if (start || end) {

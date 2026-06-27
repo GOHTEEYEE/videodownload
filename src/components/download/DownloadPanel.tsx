@@ -72,7 +72,8 @@ export default function DownloadPanel({
   const isHero = variant === 'hero';
   const showCookiesField =
     Boolean(setCookiesText) &&
-    (Boolean(error) || /youtube|douyin|tiktok|cookie|block/i.test(url));
+    (Boolean(error) || /douyin|tiktok|cookie|block/i.test(url)) &&
+    !/youtube\.com|youtu\.be/i.test(url);
 
   const cookiesField = showCookiesField ? (
     <details className="panel-cookies-advanced">

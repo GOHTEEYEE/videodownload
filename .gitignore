@@ -29,6 +29,8 @@ test-*.js
 debug-*.js
 analyze-*.js
 test_cookies.txt
+secrets/*.txt
+!secrets/*.example.txt
 
 # debug
 npm-debug.log*

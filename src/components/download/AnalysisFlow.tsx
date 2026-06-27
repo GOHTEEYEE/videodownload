@@ -168,7 +168,7 @@ export default function AnalysisFlow({
         </div>
       )}
 
-      {setCookiesText && (error || /youtube|douyin|tiktok/i.test(url)) && (
+      {setCookiesText && (error || /douyin|tiktok/i.test(url)) && !/youtube\.com|youtu\.be/i.test(url) && (
         <details className="panel-cookies-advanced">
           <summary>Advanced: browser cookies (optional)</summary>
           <p className="panel-cookies-hint">

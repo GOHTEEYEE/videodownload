@@ -10,6 +10,11 @@ import {
     sanitizeInputUrl,
 } from '@/lib/douyin';
 import { canUseBrowserAutomation, devLog, isVercel } from '@/lib/env';
+import {
+    applyCookiesToYtDlpOptions,
+    hasServerCookies,
+    resolveCookiesForRequest,
+} from '@/lib/cookie-store';
 import { createYtDlp } from '@/lib/ytdlp';
 
 export const runtime = 'nodejs';
@@ -100,7 +105,9 @@ const mapExtractError = (errorMessage: string, requestUrl: string) => {
             error: douyinHint
                 ? 'Douyin security check triggered. Try again later or provide browser cookies.'
                 : youtubeHint
-                  ? 'YouTube is blocking cloud servers (not your account). Wait a few minutes, try another video, or paste YouTube cookies in Advanced settings below.'
+                  ? hasServerCookies('youtube')
+                    ? 'YouTube blocked this request. Wait a few minutes or try another video.'
+                    : 'YouTube is blocking cloud servers. Wait a few minutes, try another video, or configure server YouTube cookies.'
                   : 'This platform blocked automated access. Try again later.',
         };
     }
@@ -296,7 +303,6 @@ export async function POST(req: Request) {
     let requestUrl = '';
     try {
         let { url, cookiesText } = await req.json();
-        const hasCookiesText = typeof cookiesText === 'string' && cookiesText.trim().length > 0;
 
         if (!url) {
             return NextResponse.json({ error: 'URL is required' }, { status: 400 });
@@ -308,6 +314,10 @@ export async function POST(req: Request) {
         }
 
         url = requestUrl;
+        const resolvedCookies = resolveCookiesForRequest(url, cookiesText);
+        if (resolvedCookies.source === 'server') {
+            devLog('[API] Using server-configured cookies for this platform');
+        }
 
         const resolvedUrl = isDouyinUrl(url) ? await resolveDouyinUrl(url) : url;
         if (resolvedUrl !== url) {
@@ -359,16 +369,13 @@ export async function POST(req: Request) {
             extractorArgs: extraArgs
         };
 
-        if (hasCookiesText) {
-            if (cookiesText.startsWith('# Netscape') || cookiesText.includes('\t')) {
-                cookiesTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vibe-cookies-'));
-                cookiesFilePath = path.join(cookiesTempDir, 'cookies.txt');
-                fs.writeFileSync(cookiesFilePath, cookiesText.trim());
-                options.cookies = cookiesFilePath;
-            } else {
-                if (!options.addHeader) options.addHeader = [];
-                options.addHeader.push(`Cookie:${cookiesText.trim()}`);
-            }
+        if (resolvedCookies.cookiesText) {
+            cookiesTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vibe-cookies-'));
+            cookiesFilePath = applyCookiesToYtDlpOptions(
+                options,
+                resolvedCookies.cookiesText,
+                cookiesTempDir
+            );
         } else if (cookiesFlag.cookiesFromBrowser) {
             options.cookiesFromBrowser = cookiesFlag.cookiesFromBrowser;
         }
