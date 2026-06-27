@@ -23,38 +23,59 @@ export const maxDuration = 60;
 
 const isTikTokUrl = (url: string) => /tiktok\.com/i.test(url);
 
-const YOUTUBE_CLIENTS_DEFAULT = ['android,web', 'ios', 'tv_embedded', 'mweb'];
-const YOUTUBE_CLIENTS_WITH_COOKIES = ['web', 'mweb', 'ios', 'android,web'];
+// `null` = let yt-dlp pick its default clients (works most reliably).
+// Other clients are fallbacks. `web`/`tv`/`ios` often fail with
+// "Requested format is not available" on some videos, so they are last.
+const YOUTUBE_CLIENT_STRATEGIES: Array<string | null> = [
+    null,
+    'mweb',
+    'android,web',
+    'tv_embedded',
+    'ios',
+];
+
+const hasUsableFormats = (output: any): boolean =>
+    Boolean(output && Array.isArray(output.formats) && output.formats.length > 0) ||
+    Boolean(output && output.url);
 
 const runYtDlpExtract = async (
     ytdl: ReturnType<typeof createYtDlp>,
     url: string,
-    baseOptions: Record<string, unknown>,
-    withCookies = false
+    baseOptions: Record<string, unknown>
 ) => {
     if (!isYouTubeUrl(url)) {
         return ytdl(url, baseOptions as any);
     }
 
-    const strategies = withCookies ? YOUTUBE_CLIENTS_WITH_COOKIES : YOUTUBE_CLIENTS_DEFAULT;
     let lastError: unknown;
-    for (const client of strategies) {
+    for (const client of YOUTUBE_CLIENT_STRATEGIES) {
         try {
+            const youtubeArgs = [
+                ...(((baseOptions.extractorArgs as Record<string, string[]> | undefined)
+                    ?.youtube as string[] | undefined) ?? []),
+            ].filter((arg) => !arg.startsWith('player_client='));
+            if (client) youtubeArgs.push(`player_client=${client}`);
+
             const options = {
                 ...baseOptions,
                 extractorArgs: {
                     ...(baseOptions.extractorArgs as Record<string, string[]> | undefined),
-                    youtube: [`player_client=${client}`],
+                    youtube: youtubeArgs,
                 },
             };
-            devLog(`[API] YouTube extract try player_client=${client}`);
-            return await ytdl(url, options as any);
+            devLog(`[API] YouTube extract try player_client=${client ?? 'default'}`);
+            const output = await ytdl(url, options as any);
+            if (hasUsableFormats(output)) {
+                return output;
+            }
+            devLog(`[API] player_client=${client ?? 'default'} returned no formats, trying next`);
         } catch (error) {
             lastError = error;
         }
     }
 
-    throw lastError;
+    if (lastError) throw lastError;
+    throw new Error('Requested format is not available');
 };
 
 const mapExtractError = (errorMessage: string, requestUrl: string) => {
@@ -356,12 +377,7 @@ export async function POST(req: Request) {
             douyin: ['no-watermark'],
         };
 
-        const usingYouTubeCookies = isYouTubeUrl(url) && Boolean(resolvedCookies.cookiesText);
-        if (isYouTubeUrl(url)) {
-            extraArgs.youtube = [
-                usingYouTubeCookies ? 'player_client=web' : 'player_client=android,web',
-            ];
-        }
+        // Client selection is handled by runYtDlpExtract's retry loop.
 
         const cookiesFlag: any = {};
         if (url.includes('bilibili.com') || url.includes('b23.tv')) {
@@ -379,7 +395,7 @@ export async function POST(req: Request) {
             dumpSingleJson: true,
             noCheckCertificates: true,
             noWarnings: true,
-            preferFreeFormats: !(isYouTubeUrl(url) && usingYouTubeCookies),
+            preferFreeFormats: !isYouTubeUrl(url),
             noPlaylist: true,
             quiet: true,
             skipDownload: true,
@@ -420,7 +436,7 @@ export async function POST(req: Request) {
                 else devLog('[API] Trying no-cookie request...');
 
                 options.addHeader = desktopHeaders;
-                output = await runYtDlpExtract(ytdl, url, options, usingYouTubeCookies);
+                output = await runYtDlpExtract(ytdl, url, options);
             } catch (e: any) {
                 devLog('[API] Desktop attempt failed. Switching to Mobile strategy...');
 
@@ -433,7 +449,7 @@ export async function POST(req: Request) {
                             'user-agent:Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
                             'referer:https://www.douyin.com/'
                         ];
-                        output = await runYtDlpExtract(ytdl, url, mobileOptions, usingYouTubeCookies);
+                        output = await runYtDlpExtract(ytdl, url, mobileOptions);
                         devLog('[API] Mobile strategy with provided cookies successful!');
                         return NextResponse.json(output);
                     } catch (mobileCookieErr: any) {
@@ -450,7 +466,7 @@ export async function POST(req: Request) {
                         'user-agent:Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
                         'referer:https://www.douyin.com/'
                     ];
-                    output = await runYtDlpExtract(ytdl, url, mobileOptions, usingYouTubeCookies);
+                    output = await runYtDlpExtract(ytdl, url, mobileOptions);
                     devLog('[API] Mobile strategy successful!');
                 } catch (mobileErr: any) {
                     // 3. Try Puppeteer Cookies + Retry
@@ -469,7 +485,7 @@ export async function POST(req: Request) {
                         retryOptions.addHeader = desktopHeaders;
 
                         devLog('[API] Retrying extraction with fresh cookies...');
-                        output = await runYtDlpExtract(ytdl, url, retryOptions, usingYouTubeCookies);
+                        output = await runYtDlpExtract(ytdl, url, retryOptions);
                         devLog('[API] Puppeteer Cookie strategy successful!');
 
                     } catch (pe: any) {
@@ -490,7 +506,7 @@ export async function POST(req: Request) {
                 `referer:${referer}`,
                 'user-agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
             ];
-            output = await runYtDlpExtract(ytdl, url, options, usingYouTubeCookies);
+            output = await runYtDlpExtract(ytdl, url, options);
         }
 
         devLog(`[API] Successfully extracted metadata for: ${output.title}`);
