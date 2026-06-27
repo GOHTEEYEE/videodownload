@@ -12,6 +12,7 @@ import {
 import { canUseBrowserAutomation, devLog, isVercel } from '@/lib/env';
 import {
     applyCookiesToYtDlpOptions,
+    diagnoseYouTubeCookies,
     hasServerCookies,
     resolveCookiesForRequest,
 } from '@/lib/cookie-store';
@@ -151,7 +152,7 @@ const mapExtractError = (errorMessage: string, requestUrl: string) => {
                 ? 'Douyin security check triggered. Try again later or provide browser cookies.'
                 : youtubeHint
                   ? hasServerCookies('youtube')
-                    ? 'YouTube blocked this request despite server cookies — they may have expired. Re-export fresh youtube.com cookies and update COOKIES_YOUTUBE, then redeploy.'
+                    ? 'YouTube rejected the server cookies (expired, incomplete, or IP mismatch with Vercel). Re-export while logged in at youtube.com, use COOKIES_YOUTUBE_BASE64 in Vercel, then redeploy. Some videos may still fail on cloud servers.'
                     : 'YouTube is blocking the cloud server. Configure server YouTube cookies (COOKIES_YOUTUBE) in Vercel, or wait and try another video.'
                   : 'This platform blocked automated access. Try again later.',
         };
@@ -361,10 +362,16 @@ export async function POST(req: Request) {
         url = requestUrl;
         const resolvedCookies = resolveCookiesForRequest(url, cookiesText);
         const youtubeCookiesConfigured = isYouTubeUrl(url) && hasServerCookies('youtube');
-        // Logged to Vercel runtime logs to confirm cookies are picked up.
-        console.log(
-            `[API] cookie source=${resolvedCookies.source ?? 'none'} youtubeEnvConfigured=${youtubeCookiesConfigured}`
-        );
+        if (isYouTubeUrl(url) && resolvedCookies.cookiesText) {
+            const diag = diagnoseYouTubeCookies(resolvedCookies.cookiesText);
+            console.log(
+                `[API] youtube cookies source=${resolvedCookies.source} lines=${diag.lineCount} youtubeLines=${diag.youtubeDomainLines} markers=${diag.foundMarkers.join(',')} missing=${diag.missingMarkers.join(',')} valid=${diag.looksValid}`
+            );
+        } else {
+            console.log(
+                `[API] cookie source=${resolvedCookies.source ?? 'none'} youtubeEnvConfigured=${youtubeCookiesConfigured}`
+            );
+        }
 
         const resolvedUrl = isDouyinUrl(url) ? await resolveDouyinUrl(url) : url;
         if (resolvedUrl !== url) {

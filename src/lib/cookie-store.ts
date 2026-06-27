@@ -20,15 +20,67 @@ export const detectCookiePlatform = (url: string): CookiePlatform | null => {
     return null;
 };
 
+const YOUTUBE_COOKIE_MARKERS = [
+    'LOGIN_INFO',
+    '__Secure-1PSID',
+    '__Secure-3PSID',
+    'SID',
+    'SAPISID',
+] as const;
+
+export type YouTubeCookieDiagnostics = {
+    lineCount: number;
+    youtubeDomainLines: number;
+    hasTabs: boolean;
+    hasNetscapeHeader: boolean;
+    foundMarkers: string[];
+    missingMarkers: string[];
+    looksValid: boolean;
+};
+
+/** Normalize cookie text from env vars (literal \\n, missing header). */
+export const normalizeCookieText = (raw: string): string => {
+    let text = raw.trim();
+    if (!text.includes('\n') && text.includes('\\n')) {
+        text = text.replace(/\\n/g, '\n');
+    }
+    if (!text.startsWith('# Netscape') && text.includes('\t')) {
+        text = `# Netscape HTTP Cookie File\n${text}`;
+    }
+    return text;
+};
+
+export const diagnoseYouTubeCookies = (cookiesText: string): YouTubeCookieDiagnostics => {
+    const normalized = normalizeCookieText(cookiesText);
+    const lines = normalized.split('\n').filter((l) => l.trim() && !l.startsWith('#'));
+    const foundMarkers = YOUTUBE_COOKIE_MARKERS.filter((m) => normalized.includes(m));
+    const missingMarkers = YOUTUBE_COOKIE_MARKERS.filter((m) => !normalized.includes(m));
+    const youtubeDomainLines = lines.filter((l) => l.includes('.youtube.com')).length;
+
+    return {
+        lineCount: lines.length,
+        youtubeDomainLines,
+        hasTabs: normalized.includes('\t'),
+        hasNetscapeHeader: normalized.startsWith('# Netscape'),
+        foundMarkers: [...foundMarkers],
+        missingMarkers: [...missingMarkers],
+        looksValid:
+            lines.length >= 3 &&
+            normalized.includes('\t') &&
+            youtubeDomainLines >= 1 &&
+            foundMarkers.length >= 2,
+    };
+};
+
 const readEnvCookie = (platform: CookiePlatform): string | null => {
     const base = PLATFORM_ENV[platform];
     const raw = process.env[base]?.trim();
-    if (raw) return raw;
+    if (raw) return normalizeCookieText(raw);
 
     const b64 = process.env[`${base}_BASE64`]?.trim();
     if (b64) {
         try {
-            return Buffer.from(b64, 'base64').toString('utf8').trim();
+            return normalizeCookieText(Buffer.from(b64, 'base64').toString('utf8'));
         } catch {
             return null;
         }
@@ -81,7 +133,7 @@ export const applyCookiesToYtDlpOptions = (
     cookiesText: string,
     cookiesDir: string
 ): string | null => {
-    const trimmed = cookiesText.trim();
+    const trimmed = normalizeCookieText(cookiesText);
     if (!trimmed) return null;
 
     if (trimmed.startsWith('# Netscape') || trimmed.includes('\t')) {
