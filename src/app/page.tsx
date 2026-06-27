@@ -16,6 +16,8 @@ import {
 import {
   triggerBrowserDownload,
   toAbsoluteDownloadUrl,
+  isYouTubeUrl,
+  normalizeYouTubeUrl,
   type ReadyDownload,
 } from '@/lib/download-client';
 
@@ -31,12 +33,12 @@ interface BackgroundJob {
 }
 
 function cleanUrl(raw: string): string {
-  return (
+  const matched =
     raw
       .trim()
       .match(/https?:\/\/[^\s<>"']+/i)?.[0]
-      ?.replace(/[,.;:!?，。！？、]+$/u, '') || raw.trim()
-  );
+      ?.replace(/[,.;:!?，。！？、]+$/u, '') || raw.trim();
+  return isYouTubeUrl(matched) ? normalizeYouTubeUrl(matched) : matched;
 }
 
 export default function Home() {
@@ -201,7 +203,12 @@ export default function Home() {
 
     const jobId = Math.random().toString(36).substring(7);
     const title = (info.title || 'download').replace(/[<>:"/\\|?*]/g, '').trim() || 'download';
-    const ext = mediaType === 'audio' ? 'mp3' : 'mp4';
+    const ext =
+      mediaType === 'audio'
+        ? resolved.format?.ext === 'm4a' || resolved.format?.ext === 'webm'
+          ? resolved.format.ext
+          : 'mp3'
+        : 'mp4';
     const enableTranslate = subtitleLanguage !== 'original' && mediaType === 'video';
 
     setBackgroundJobs((prev) => [

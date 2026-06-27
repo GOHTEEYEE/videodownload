@@ -15,27 +15,30 @@ import {
     hasServerCookies,
     resolveCookiesForRequest,
 } from '@/lib/cookie-store';
+import { isYouTubeUrl, normalizeYouTubeUrl } from '@/lib/download-client';
 import { createYtDlp } from '@/lib/ytdlp';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
 
-const isYouTubeUrl = (url: string) => /youtube\.com|youtu\.be/i.test(url);
 const isTikTokUrl = (url: string) => /tiktok\.com/i.test(url);
 
-const youtubeClientStrategies = ['android,web', 'ios', 'tv_embedded', 'mweb'];
+const YOUTUBE_CLIENTS_DEFAULT = ['android,web', 'ios', 'tv_embedded', 'mweb'];
+const YOUTUBE_CLIENTS_WITH_COOKIES = ['web', 'mweb', 'ios', 'android,web'];
 
 const runYtDlpExtract = async (
     ytdl: ReturnType<typeof createYtDlp>,
     url: string,
-    baseOptions: Record<string, unknown>
+    baseOptions: Record<string, unknown>,
+    withCookies = false
 ) => {
     if (!isYouTubeUrl(url)) {
         return ytdl(url, baseOptions as any);
     }
 
+    const strategies = withCookies ? YOUTUBE_CLIENTS_WITH_COOKIES : YOUTUBE_CLIENTS_DEFAULT;
     let lastError: unknown;
-    for (const client of youtubeClientStrategies) {
+    for (const client of strategies) {
         try {
             const options = {
                 ...baseOptions,
@@ -67,6 +70,14 @@ const mapExtractError = (errorMessage: string, requestUrl: string) => {
     }
     if (errorMessage.includes('Video unavailable') || errorMessage.includes('has been removed')) {
         return { status: 404, error: 'This video is unavailable or has been removed.' };
+    }
+    if (errorMessage.includes('Requested format is not available')) {
+        return {
+            status: 422,
+            error: youtubeHint
+                ? 'YouTube returned no matching stream for this request. Try MP4 instead of MP3, pick Highest Available quality, or use a plain watch link (without playlist/radio).'
+                : 'Requested quality or format is not available. Try a lower quality or a different format.',
+        };
     }
     if (
         errorMessage.includes('status code 10231') ||
@@ -324,6 +335,9 @@ export async function POST(req: Request) {
             devLog(`[API] Resolved short link to: ${resolvedUrl.substring(0, 60)}...`);
         }
         url = resolvedUrl;
+        if (isYouTubeUrl(url)) {
+            url = normalizeYouTubeUrl(url);
+        }
 
         // Basic URL validation
         if (url.length > 500 || !url.startsWith('http')) {
@@ -342,8 +356,11 @@ export async function POST(req: Request) {
             douyin: ['no-watermark'],
         };
 
+        const usingYouTubeCookies = isYouTubeUrl(url) && Boolean(resolvedCookies.cookiesText);
         if (isYouTubeUrl(url)) {
-            extraArgs.youtube = ['player_client=android,web'];
+            extraArgs.youtube = [
+                usingYouTubeCookies ? 'player_client=web' : 'player_client=android,web',
+            ];
         }
 
         const cookiesFlag: any = {};
@@ -362,7 +379,7 @@ export async function POST(req: Request) {
             dumpSingleJson: true,
             noCheckCertificates: true,
             noWarnings: true,
-            preferFreeFormats: true,
+            preferFreeFormats: !(isYouTubeUrl(url) && usingYouTubeCookies),
             noPlaylist: true,
             quiet: true,
             skipDownload: true,
@@ -403,7 +420,7 @@ export async function POST(req: Request) {
                 else devLog('[API] Trying no-cookie request...');
 
                 options.addHeader = desktopHeaders;
-                output = await runYtDlpExtract(ytdl, url, options);
+                output = await runYtDlpExtract(ytdl, url, options, usingYouTubeCookies);
             } catch (e: any) {
                 devLog('[API] Desktop attempt failed. Switching to Mobile strategy...');
 
@@ -416,7 +433,7 @@ export async function POST(req: Request) {
                             'user-agent:Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
                             'referer:https://www.douyin.com/'
                         ];
-                        output = await runYtDlpExtract(ytdl, url, mobileOptions);
+                        output = await runYtDlpExtract(ytdl, url, mobileOptions, usingYouTubeCookies);
                         devLog('[API] Mobile strategy with provided cookies successful!');
                         return NextResponse.json(output);
                     } catch (mobileCookieErr: any) {
@@ -433,7 +450,7 @@ export async function POST(req: Request) {
                         'user-agent:Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
                         'referer:https://www.douyin.com/'
                     ];
-                    output = await runYtDlpExtract(ytdl, url, mobileOptions);
+                    output = await runYtDlpExtract(ytdl, url, mobileOptions, usingYouTubeCookies);
                     devLog('[API] Mobile strategy successful!');
                 } catch (mobileErr: any) {
                     // 3. Try Puppeteer Cookies + Retry
@@ -452,7 +469,7 @@ export async function POST(req: Request) {
                         retryOptions.addHeader = desktopHeaders;
 
                         devLog('[API] Retrying extraction with fresh cookies...');
-                        output = await runYtDlpExtract(ytdl, url, retryOptions);
+                        output = await runYtDlpExtract(ytdl, url, retryOptions, usingYouTubeCookies);
                         devLog('[API] Puppeteer Cookie strategy successful!');
 
                     } catch (pe: any) {
@@ -473,7 +490,7 @@ export async function POST(req: Request) {
                 `referer:${referer}`,
                 'user-agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
             ];
-            output = await runYtDlpExtract(ytdl, url, options);
+            output = await runYtDlpExtract(ytdl, url, options, usingYouTubeCookies);
         }
 
         devLog(`[API] Successfully extracted metadata for: ${output.title}`);

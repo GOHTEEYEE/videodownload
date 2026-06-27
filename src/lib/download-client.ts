@@ -56,6 +56,33 @@ export function triggerBrowserDownload(href: string, filename: string): boolean 
   return true;
 }
 
+export const isYouTubeUrl = (url: string): boolean => /youtube\.com|youtu\.be/i.test(url);
+
+/** Strip playlist/radio params — only the video id is needed for yt-dlp. */
+export function normalizeYouTubeUrl(url: string): string {
+  const match = url.match(
+    /(?:youtube\.com\/(?:watch\?.*?v=|embed\/|shorts\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/
+  );
+  if (match?.[1]) {
+    return `https://www.youtube.com/watch?v=${match[1]}`;
+  }
+  return url;
+}
+
+export function isDirectAudioStream(streamUrl: string, formatExt?: string): boolean {
+  const ext = (formatExt || '').toLowerCase();
+  return (
+    ext === 'mp3' ||
+    ext === 'm4a' ||
+    ext === 'webm' ||
+    ext === 'opus' ||
+    ext === 'ogg' ||
+    streamUrl.includes('.mp3') ||
+    streamUrl.includes('mime_type=audio') ||
+    streamUrl.includes('mime=audio')
+  );
+}
+
 export function refererForUrl(url: string): string | undefined {
   try {
     const host = new URL(url).hostname;
@@ -83,8 +110,7 @@ export function canDownloadDirectly(options: {
   if (options.needsTranslation || options.needsWatermarkRemoval) return false;
   if (options.needsAudioMerge) return false;
   if (options.mediaType === 'video') return true;
-  const ext = (options.formatExt || '').toLowerCase();
-  return ext === 'mp3' || ext === 'm4a' || options.streamUrl.includes('.mp3');
+  return isDirectAudioStream(options.streamUrl, options.formatExt);
 }
 
 export function mobileDownloadHint(): string | null {

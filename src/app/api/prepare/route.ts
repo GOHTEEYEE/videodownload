@@ -13,7 +13,7 @@ import {
     resolveDouyinUrl,
 } from '@/lib/douyin';
 import { resolveAudioBitrate, resolveVideoQuality } from '@/lib/quality';
-import { buildProxyDownloadUrl, refererForUrl } from '@/lib/download-client';
+import { buildProxyDownloadUrl, isDirectAudioStream, isYouTubeUrl, normalizeYouTubeUrl, refererForUrl } from '@/lib/download-client';
 import { canUseLocalBinaries, devLog, isVercel } from '@/lib/env';
 import { applyCookiesToYtDlpOptions, resolveCookiesForRequest } from '@/lib/cookie-store';
 import { createYtDlp, getYtDlpPath } from '@/lib/ytdlp';
@@ -47,13 +47,7 @@ const canProxyStream = (
     if (!streamUrl || streamUrl.includes('playwm')) return false;
     if (needsAudioMerge) return false;
     if (!isAudio) return true;
-    const ext = (formatExt || '').toLowerCase();
-    return (
-        ext === 'mp3' ||
-        ext === 'm4a' ||
-        streamUrl.includes('.mp3') ||
-        streamUrl.includes('mime_type=audio')
-    );
+    return isDirectAudioStream(streamUrl, formatExt);
 };
 
 // Re-use the global store from other routes
@@ -417,7 +411,11 @@ export async function POST(req: Request) {
 
                 logStore[jobId].push(`[${new Date().toLocaleTimeString()}] Stage 1: Requesting formats...`);
 
-                const activeUrl = isDouyinUrl(url) ? await resolveDouyinUrl(url) : url;
+                const activeUrl = isDouyinUrl(url)
+                    ? await resolveDouyinUrl(url)
+                    : isYouTubeUrl(url)
+                      ? normalizeYouTubeUrl(url)
+                      : url;
                 if (activeUrl !== url) {
                     logStore[jobId].push(`[${new Date().toLocaleTimeString()}] Resolved short link.`);
                 }
