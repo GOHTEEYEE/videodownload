@@ -23,10 +23,19 @@ export const maxDuration = 60;
 
 const isTikTokUrl = (url: string) => /tiktok\.com/i.test(url);
 
-// `null` = let yt-dlp pick its default clients (works most reliably).
-// Other clients are fallbacks. `web`/`tv`/`ios` often fail with
-// "Requested format is not available" on some videos, so they are last.
-const YOUTUBE_CLIENT_STRATEGIES: Array<string | null> = [
+// `null` = let yt-dlp pick its default clients.
+// With cookies: prefer cookie-aware clients (mweb/web) — they bypass the
+// datacenter bot check. Without cookies: prefer bot-resistant clients.
+// `web`/`tv`/`ios` can fail with "Requested format is not available" on some
+// videos, so they are not first in the no-cookie list.
+const YOUTUBE_CLIENTS_WITH_COOKIES: Array<string | null> = [
+    'mweb',
+    'web',
+    null,
+    'android,web',
+    'tv_embedded',
+];
+const YOUTUBE_CLIENTS_NO_COOKIES: Array<string | null> = [
     null,
     'mweb',
     'android,web',
@@ -41,14 +50,18 @@ const hasUsableFormats = (output: any): boolean =>
 const runYtDlpExtract = async (
     ytdl: ReturnType<typeof createYtDlp>,
     url: string,
-    baseOptions: Record<string, unknown>
+    baseOptions: Record<string, unknown>,
+    withCookies = false
 ) => {
     if (!isYouTubeUrl(url)) {
         return ytdl(url, baseOptions as any);
     }
 
+    const strategies = withCookies
+        ? YOUTUBE_CLIENTS_WITH_COOKIES
+        : YOUTUBE_CLIENTS_NO_COOKIES;
     let lastError: unknown;
-    for (const client of YOUTUBE_CLIENT_STRATEGIES) {
+    for (const client of strategies) {
         try {
             const youtubeArgs = [
                 ...(((baseOptions.extractorArgs as Record<string, string[]> | undefined)
@@ -138,8 +151,8 @@ const mapExtractError = (errorMessage: string, requestUrl: string) => {
                 ? 'Douyin security check triggered. Try again later or provide browser cookies.'
                 : youtubeHint
                   ? hasServerCookies('youtube')
-                    ? 'YouTube blocked this request. Wait a few minutes or try another video.'
-                    : 'YouTube is blocking cloud servers. Wait a few minutes, try another video, or configure server YouTube cookies.'
+                    ? 'YouTube blocked this request despite server cookies — they may have expired. Re-export fresh youtube.com cookies and update COOKIES_YOUTUBE, then redeploy.'
+                    : 'YouTube is blocking the cloud server. Configure server YouTube cookies (COOKIES_YOUTUBE) in Vercel, or wait and try another video.'
                   : 'This platform blocked automated access. Try again later.',
         };
     }
@@ -347,9 +360,11 @@ export async function POST(req: Request) {
 
         url = requestUrl;
         const resolvedCookies = resolveCookiesForRequest(url, cookiesText);
-        if (resolvedCookies.source === 'server') {
-            devLog('[API] Using server-configured cookies for this platform');
-        }
+        const youtubeCookiesConfigured = isYouTubeUrl(url) && hasServerCookies('youtube');
+        // Logged to Vercel runtime logs to confirm cookies are picked up.
+        console.log(
+            `[API] cookie source=${resolvedCookies.source ?? 'none'} youtubeEnvConfigured=${youtubeCookiesConfigured}`
+        );
 
         const resolvedUrl = isDouyinUrl(url) ? await resolveDouyinUrl(url) : url;
         if (resolvedUrl !== url) {
@@ -377,7 +392,7 @@ export async function POST(req: Request) {
             douyin: ['no-watermark'],
         };
 
-        // Client selection is handled by runYtDlpExtract's retry loop.
+        const usingYouTubeCookies = isYouTubeUrl(url) && Boolean(resolvedCookies.cookiesText);
 
         const cookiesFlag: any = {};
         if (url.includes('bilibili.com') || url.includes('b23.tv')) {
@@ -436,7 +451,7 @@ export async function POST(req: Request) {
                 else devLog('[API] Trying no-cookie request...');
 
                 options.addHeader = desktopHeaders;
-                output = await runYtDlpExtract(ytdl, url, options);
+                output = await runYtDlpExtract(ytdl, url, options, usingYouTubeCookies);
             } catch (e: any) {
                 devLog('[API] Desktop attempt failed. Switching to Mobile strategy...');
 
@@ -449,7 +464,7 @@ export async function POST(req: Request) {
                             'user-agent:Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
                             'referer:https://www.douyin.com/'
                         ];
-                        output = await runYtDlpExtract(ytdl, url, mobileOptions);
+                        output = await runYtDlpExtract(ytdl, url, mobileOptions, usingYouTubeCookies);
                         devLog('[API] Mobile strategy with provided cookies successful!');
                         return NextResponse.json(output);
                     } catch (mobileCookieErr: any) {
@@ -466,7 +481,7 @@ export async function POST(req: Request) {
                         'user-agent:Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
                         'referer:https://www.douyin.com/'
                     ];
-                    output = await runYtDlpExtract(ytdl, url, mobileOptions);
+                    output = await runYtDlpExtract(ytdl, url, mobileOptions, usingYouTubeCookies);
                     devLog('[API] Mobile strategy successful!');
                 } catch (mobileErr: any) {
                     // 3. Try Puppeteer Cookies + Retry
@@ -485,7 +500,7 @@ export async function POST(req: Request) {
                         retryOptions.addHeader = desktopHeaders;
 
                         devLog('[API] Retrying extraction with fresh cookies...');
-                        output = await runYtDlpExtract(ytdl, url, retryOptions);
+                        output = await runYtDlpExtract(ytdl, url, retryOptions, usingYouTubeCookies);
                         devLog('[API] Puppeteer Cookie strategy successful!');
 
                     } catch (pe: any) {
@@ -506,7 +521,7 @@ export async function POST(req: Request) {
                 `referer:${referer}`,
                 'user-agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
             ];
-            output = await runYtDlpExtract(ytdl, url, options);
+            output = await runYtDlpExtract(ytdl, url, options, usingYouTubeCookies);
         }
 
         devLog(`[API] Successfully extracted metadata for: ${output.title}`);
