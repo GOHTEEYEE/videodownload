@@ -12,6 +12,8 @@ import {
 import { canUseBrowserAutomation, devLog, isVercel } from '@/lib/env';
 import {
     applyCookiesToYtDlpOptions,
+    cookiesMatchPlatform,
+    detectCookiePlatform,
     diagnoseYouTubeCookies,
     hasServerCookies,
     resolveCookiesForRequest,
@@ -362,6 +364,10 @@ export async function POST(req: Request) {
         url = requestUrl;
         const resolvedCookies = resolveCookiesForRequest(url, cookiesText);
         const youtubeCookiesConfigured = isYouTubeUrl(url) && hasServerCookies('youtube');
+        const userCookiesIgnored =
+            Boolean(cookiesText?.trim()) &&
+            Boolean(detectCookiePlatform(url)) &&
+            !cookiesMatchPlatform(cookiesText.trim(), detectCookiePlatform(url)!);
         if (isYouTubeUrl(url) && resolvedCookies.cookiesText) {
             const diag = diagnoseYouTubeCookies(resolvedCookies.cookiesText);
             console.log(
@@ -369,7 +375,7 @@ export async function POST(req: Request) {
             );
         } else {
             console.log(
-                `[API] cookie source=${resolvedCookies.source ?? 'none'} youtubeEnvConfigured=${youtubeCookiesConfigured}`
+                `[API] cookie source=${resolvedCookies.source ?? 'none'} youtubeEnvConfigured=${youtubeCookiesConfigured}${userCookiesIgnored ? ' userCookiesIgnored=wrong-platform' : ''}`
             );
         }
 
@@ -539,7 +545,18 @@ export async function POST(req: Request) {
                 `referer:${referer}`,
                 'user-agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
             ];
-            output = await runYtDlpExtract(ytdl, url, options, usingYouTubeCookies);
+            try {
+                output = await runYtDlpExtract(ytdl, url, options, usingYouTubeCookies);
+            } catch (cookieErr: unknown) {
+                if (isYouTubeUrl(url) && usingYouTubeCookies) {
+                    devLog('[API] YouTube extract with cookies failed, retrying without cookies...');
+                    const noCookieOptions = { ...options };
+                    delete noCookieOptions.cookies;
+                    output = await runYtDlpExtract(ytdl, url, noCookieOptions, false);
+                } else {
+                    throw cookieErr;
+                }
+            }
         }
 
         devLog(`[API] Successfully extracted metadata for: ${output.title}`);

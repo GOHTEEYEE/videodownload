@@ -110,12 +110,28 @@ export const getServerCookieText = (url: string): string | null => {
     return readEnvCookie(platform);
 };
 
+const PLATFORM_COOKIE_MARKERS: Record<CookiePlatform, string[]> = {
+    youtube: ['.youtube.com', 'youtube.com'],
+    tiktok: ['.tiktok.com', 'tiktok.com'],
+    douyin: ['.douyin.com', 'douyin.com', 'iesdouyin.com'],
+    instagram: ['.instagram.com', 'instagram.com'],
+    facebook: ['.facebook.com', 'facebook.com'],
+};
+
+/** True when pasted cookies belong to the platform for this URL (avoids TikTok cookies on YouTube). */
+export const cookiesMatchPlatform = (cookiesText: string, platform: CookiePlatform): boolean => {
+    const normalized = normalizeCookieText(cookiesText);
+    return PLATFORM_COOKIE_MARKERS[platform].some((marker) => normalized.includes(marker));
+};
+
 export const resolveCookiesForRequest = (
     url: string,
     userCookiesText?: string | null
 ): { cookiesText: string | null; source: 'user' | 'server' | null } => {
+    const platform = detectCookiePlatform(url);
     const trimmed = typeof userCookiesText === 'string' ? userCookiesText.trim() : '';
-    if (trimmed) {
+
+    if (trimmed && platform && cookiesMatchPlatform(trimmed, platform)) {
         return { cookiesText: trimmed, source: 'user' };
     }
 
@@ -170,11 +186,12 @@ export const resolveCookiesForProxy = (
     targetUrl: string,
     userCookiesText?: string | null
 ): string | null => {
+    const pageUrl = referer || targetUrl;
+    const platform = detectCookiePlatform(pageUrl);
     const trimmed = typeof userCookiesText === 'string' ? userCookiesText.trim() : '';
-    if (trimmed) {
+    if (trimmed && platform && cookiesMatchPlatform(trimmed, platform)) {
         return cookiesToHeader(trimmed, targetUrl);
     }
-    const pageUrl = referer || targetUrl;
     const server = getServerCookieText(pageUrl);
     if (server) {
         return cookiesToHeader(server, targetUrl);
