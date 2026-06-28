@@ -15,12 +15,17 @@ export async function GET(req: Request) {
 
     try {
         const headers: Record<string, string> = {
-            'User-Agent':
-                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
             Accept: '*/*',
         };
-        if (referer) {
+        if (referer?.includes('facebook.com')) {
+            headers['User-Agent'] = 'facebookexternalhit/1.1';
             headers.Referer = referer;
+        } else {
+            headers['User-Agent'] =
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
+            if (referer) {
+                headers.Referer = referer;
+            }
         }
 
         const response = await fetch(url, { headers, redirect: 'follow' });

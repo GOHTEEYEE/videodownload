@@ -18,7 +18,7 @@ import { canUseLocalBinaries, devLog, isVercel } from '@/lib/env';
 import { applyCookiesToYtDlpOptions, resolveCookiesForRequest } from '@/lib/cookie-store';
 import { createYtDlp, getYtDlpPath } from '@/lib/ytdlp';
 import { getFfmpegPath } from '@/lib/ffmpeg';
-import { formatResolutionLabel, pickBestMuxedFormat, parseHeight } from '@/lib/formats';
+import { formatResolutionLabel, pickBestAudio, pickBestMuxedFormat, parseHeight } from '@/lib/formats';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -351,6 +351,49 @@ export async function POST(req: Request) {
             return NextResponse.json({ jobId, direct: true, downloadUrl, qualityNotice });
         }
 
+        // Separate video + audio streams: combine in the user's browser (no Vercel background job).
+        if (
+            !serverProcessing &&
+            !isAudio &&
+            resolvedNeedsMerge &&
+            isVercel() &&
+            !canUseLocalBinaries() &&
+            streamUrl &&
+            Array.isArray(clientFormats) &&
+            clientFormats.length > 0
+        ) {
+            const audioFormat = pickBestAudio(clientFormats);
+            if (audioFormat?.url) {
+                const safeTitle =
+                    (title || 'video').replace(/[<>:"/\\|?*]/g, '').trim() || 'video';
+                const filename = `${safeTitle}.mp4`;
+                const referer = refererForUrl(url);
+                const mergeNotice =
+                    qualityNotice ||
+                    'Combining video and audio in your browser for a full MP4 with sound.';
+
+                logStore[jobId].push(
+                    `[${new Date().toLocaleTimeString()}] Ready for in-browser merge (video + audio).`
+                );
+                jobCache[jobId] = {
+                    status: 'ready',
+                    progress: 100,
+                    qualityNotice: mergeNotice,
+                    clientMerge: true,
+                };
+
+                return NextResponse.json({
+                    jobId,
+                    clientMerge: true,
+                    videoUrl: streamUrl,
+                    audioUrl: audioFormat.url,
+                    referer,
+                    filename,
+                    qualityNotice: mergeNotice,
+                });
+            }
+        }
+
         if (isVercel() && !canUseLocalBinaries() && !resolvedNeedsMerge) {
             if (isDouyinUrl(url)) {
                 try {
@@ -401,7 +444,17 @@ export async function POST(req: Request) {
             );
         }
 
-        // Start processing in the background (fire and forget)
+        if (isVercel() && !canUseLocalBinaries() && !serverProcessing) {
+            const mergeError =
+                resolvedNeedsMerge
+                    ? 'Could not find separate audio for this video. Try MP3 or a lower MP4 quality.'
+                    : 'Direct download is unavailable for this video on cloud hosting.';
+            logStore[jobId].push(`[${new Date().toLocaleTimeString()}] ERROR: ${mergeError}`);
+            jobCache[jobId] = { status: 'error', error: mergeError };
+            return NextResponse.json({ error: mergeError }, { status: 422 });
+        }
+
+        // Start processing in the background (local / ENABLE_LOCAL_BINARIES only)
         (async () => {
             const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vibe-dl-'));
             const outputPath = path.join(tempDir, isAudio ? 'audio.%(ext)s' : 'video.%(ext)s');

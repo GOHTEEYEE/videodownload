@@ -4,6 +4,8 @@ import {
   groupVideoFormats,
   formatResolutionLabel,
   pickBestVideo,
+  pickBestMuxedFormat,
+  parseHeight,
   hasEmbeddedAudio,
   formatNeedsAudioMerge,
 } from './formats';
@@ -164,17 +166,36 @@ export const resolveVideoQuality = (
     notice = FALLBACK_NOTICE;
   }
 
-  const needsAudioMerge = formatNeedsAudioMerge(format);
-  if (needsAudioMerge && !notice) {
-    notice = 'Merging video and audio for full MP4 with sound.';
+  let selectedFormat = format;
+  let selectedHeight = actualHeight;
+  let needsAudioMerge = formatNeedsAudioMerge(selectedFormat);
+
+  // Prefer a single-stream muxed MP4 (video+audio in one URL) for direct download.
+  if (needsAudioMerge) {
+    const maxHeight =
+      choice === QUALITY_BEST ? undefined : requestedHeight;
+    const muxed = pickBestMuxedFormat(formats, maxHeight);
+    if (muxed?.url) {
+      selectedFormat = muxed;
+      selectedHeight = parseHeight(muxed) || actualHeight;
+      needsAudioMerge = false;
+      const muxedLabel = labelForHeight(selectedHeight);
+      notice =
+        notice ||
+        (selectedHeight < requestedHeight
+          ? `Downloaded with sound at ${muxedLabel} (single-stream MP4).`
+          : `Downloaded with sound at ${muxedLabel}.`);
+    } else if (!notice) {
+      notice = 'Combining video and audio for a full MP4 with sound.';
+    }
   }
 
   return {
     requested: requestedHeight,
-    actual: actualHeight,
+    actual: selectedHeight,
     requestedLabel: labelForHeight(requestedHeight),
-    actualLabel: labelForHeight(actualHeight),
-    format,
+    actualLabel: labelForHeight(selectedHeight),
+    format: selectedFormat,
     notice,
     needsAudioMerge,
   };

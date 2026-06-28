@@ -393,15 +393,26 @@ export async function POST(req: Request) {
 
         // Determine referer based on URL
         let referer = 'https://www.youtube.com/';
+        if (url.includes('bilibili.com') || url.includes('b23.tv')) {
+            referer = 'https://www.bilibili.com/';
+        } else if (url.includes('tiktok.com')) {
+            referer = 'https://www.tiktok.com/';
+        } else if (url.includes('douyin.com')) {
+            referer = 'https://www.douyin.com/';
+        } else if (url.includes('facebook.com') || url.includes('fb.watch')) {
+            referer = 'https://www.facebook.com/';
+        } else if (url.includes('instagram.com')) {
+            referer = 'https://www.instagram.com/';
+        }
+
+        const usingYouTubeCookies = isYouTubeUrl(url) && Boolean(resolvedCookies.cookiesText);
+
+        const cookiesFlag: any = {};
         let extraArgs: Record<string, string[]> = {
             tiktok: ['no-watermark'],
             bilibili: ['no-watermark'],
             douyin: ['no-watermark'],
         };
-
-        const usingYouTubeCookies = isYouTubeUrl(url) && Boolean(resolvedCookies.cookiesText);
-
-        const cookiesFlag: any = {};
         if (url.includes('bilibili.com') || url.includes('b23.tv')) {
             referer = 'https://www.bilibili.com/';
         } else if (url.includes('tiktok.com')) {

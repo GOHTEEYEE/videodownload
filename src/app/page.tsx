@@ -16,10 +16,14 @@ import {
 import {
   triggerBrowserDownload,
   toAbsoluteDownloadUrl,
+  requiresManualDownload,
   isYouTubeUrl,
   normalizeYouTubeUrl,
+  buildProxyDownloadUrl,
+  refererForUrl,
   type ReadyDownload,
 } from '@/lib/download-client';
+import { mergeVideoAudioInBrowser, downloadBlob } from '@/lib/client-merge';
 
 interface BackgroundJob {
   id: string;
@@ -259,6 +263,43 @@ export default function Home() {
         });
         if (data.qualityNotice) setQualityNotice(data.qualityNotice);
         offerDownload(data.downloadUrl, `${title}.${ext}`);
+        return;
+      }
+
+      if (data.clientMerge && data.videoUrl && data.audioUrl) {
+        const mergeFilename = data.filename || `${title}.mp4`;
+        const pageReferer = refererForUrl(info.webpage_url || cleaned);
+        const videoProxy = toAbsoluteDownloadUrl(
+          buildProxyDownloadUrl(data.videoUrl, 'video.mp4', data.referer || pageReferer)
+        );
+        const audioProxy = toAbsoluteDownloadUrl(
+          buildProxyDownloadUrl(data.audioUrl, 'audio.m4a', data.referer || pageReferer)
+        );
+
+        setQualityNotice(data.qualityNotice || 'Combining video and audio in your browser…');
+
+        try {
+          const blob = await mergeVideoAudioInBrowser(videoProxy, audioProxy, (msg) => {
+            setQualityNotice(msg);
+          });
+          setDownloading(false);
+          updateJobFields(jobId, { status: 'done', progress: 100 });
+          setQualityNotice('Download ready — saving MP4 with sound.');
+
+          if (requiresManualDownload()) {
+            setReadyDownload({ url: URL.createObjectURL(blob), filename: mergeFilename });
+          } else {
+            downloadBlob(blob, mergeFilename);
+          }
+        } catch (mergeErr: unknown) {
+          setDownloading(false);
+          updateJobStatus(jobId, 'error');
+          setError(
+            mergeErr instanceof Error
+              ? mergeErr.message
+              : 'Failed to combine video and audio. Try MP3 instead.'
+          );
+        }
         return;
       }
 
