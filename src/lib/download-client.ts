@@ -16,6 +16,52 @@ export function buildProxyDownloadUrl(
   return `/api/proxy?${params.toString()}`;
 }
 
+export type ProxyStreamOptions = {
+  streamUrl: string;
+  referer?: string;
+  cookiesText?: string;
+};
+
+export async function fetchThroughProxy(options: ProxyStreamOptions): Promise<Response> {
+  return fetch('/api/proxy', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      url: options.streamUrl,
+      referer: options.referer,
+      cookiesText: options.cookiesText || undefined,
+    }),
+  });
+}
+
+export async function fetchBlobThroughProxy(options: ProxyStreamOptions): Promise<Blob> {
+  const res = await fetchThroughProxy(options);
+  if (!res.ok) {
+    let message = `Download failed (${res.status})`;
+    try {
+      const data = await res.json();
+      if (data.error) message = data.error;
+    } catch {
+      // ignore
+    }
+    throw new Error(message);
+  }
+  return res.blob();
+}
+
+export function parseProxyDownloadUrl(href: string): ProxyStreamOptions | null {
+  try {
+    const parsed = new URL(href, typeof window !== 'undefined' ? window.location.origin : 'http://localhost');
+    if (parsed.pathname !== '/api/proxy') return null;
+    const streamUrl = parsed.searchParams.get('url');
+    if (!streamUrl) return null;
+    const referer = parsed.searchParams.get('referer') || undefined;
+    return { streamUrl, referer };
+  } catch {
+    return null;
+  }
+}
+
 export function toAbsoluteDownloadUrl(href: string): string {
   if (href.startsWith('http://') || href.startsWith('https://')) {
     return href;

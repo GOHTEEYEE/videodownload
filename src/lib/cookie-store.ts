@@ -127,6 +127,101 @@ export const resolveCookiesForRequest = (
     return { cookiesText: null, source: null };
 };
 
+const domainMatches = (cookieDomain: string, host: string): boolean => {
+    const normalized = cookieDomain.startsWith('.') ? cookieDomain.slice(1) : cookieDomain;
+    return host === normalized || host.endsWith(`.${normalized}`);
+};
+
+/** Build a Cookie header for a CDN request from Netscape cookies.txt text. */
+export const cookiesToHeader = (cookiesText: string, targetUrl: string): string | null => {
+    let host: string;
+    try {
+        host = new URL(targetUrl).hostname.toLowerCase();
+    } catch {
+        return null;
+    }
+
+    const normalized = normalizeCookieText(cookiesText);
+    if (!normalized.includes('\t') && !normalized.startsWith('Cookie:')) {
+        return normalized;
+    }
+    if (normalized.startsWith('Cookie:')) {
+        return normalized.slice('Cookie:'.length).trim();
+    }
+
+    const pairs: string[] = [];
+    for (const line of normalized.split('\n')) {
+        if (!line.trim() || line.startsWith('#')) continue;
+        const parts = line.split('\t');
+        if (parts.length < 7) continue;
+        const domain = parts[0];
+        const name = parts[5];
+        const value = parts[6];
+        if (domainMatches(domain, host)) {
+            pairs.push(`${name}=${value}`);
+        }
+    }
+
+    return pairs.length > 0 ? pairs.join('; ') : null;
+};
+
+export const resolveCookiesForProxy = (
+    referer: string | undefined,
+    targetUrl: string,
+    userCookiesText?: string | null
+): string | null => {
+    const trimmed = typeof userCookiesText === 'string' ? userCookiesText.trim() : '';
+    if (trimmed) {
+        return cookiesToHeader(trimmed, targetUrl);
+    }
+    const pageUrl = referer || targetUrl;
+    const server = getServerCookieText(pageUrl);
+    if (server) {
+        return cookiesToHeader(server, targetUrl);
+    }
+    return null;
+};
+
+export type ProxyFetchOptions = {
+    url: string;
+    referer?: string | null;
+    cookiesText?: string | null;
+    range?: string | null;
+};
+
+export const buildProxyRequestHeaders = (options: ProxyFetchOptions): Record<string, string> => {
+    const { url, referer, cookiesText, range } = options;
+    const headers: Record<string, string> = {
+        Accept: '*/*',
+        'Accept-Language': 'en-US,en;q=0.9',
+    };
+
+    const platform = detectCookiePlatform(referer || url);
+    if (platform === 'facebook' || url.includes('fbcdn.net')) {
+        headers['User-Agent'] = 'facebookexternalhit/1.1';
+        headers.Referer = referer || 'https://www.facebook.com/';
+    } else if (platform === 'tiktok' || url.includes('tiktokcdn.com') || url.includes('tiktokv.com')) {
+        headers['User-Agent'] =
+            'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1';
+        headers.Referer = referer || 'https://www.tiktok.com/';
+    } else {
+        headers['User-Agent'] =
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
+        if (referer) headers.Referer = referer;
+    }
+
+    const cookieHeader = resolveCookiesForProxy(referer || undefined, url, cookiesText);
+    if (cookieHeader) {
+        headers.Cookie = cookieHeader;
+    }
+
+    if (range) {
+        headers.Range = range;
+    }
+
+    return headers;
+};
+
 /** Write cookies into yt-dlp options; returns temp file path when a file was created. */
 export const applyCookiesToYtDlpOptions = (
     options: Record<string, unknown>,

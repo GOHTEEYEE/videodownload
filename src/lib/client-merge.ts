@@ -1,13 +1,26 @@
 'use client';
 
+import {
+  fetchBlobThroughProxy,
+  type ProxyStreamOptions,
+} from '@/lib/download-client';
+
 /** Combine separate video + audio streams into one MP4 in the browser (no server ffmpeg). */
 export async function mergeVideoAudioInBrowser(
-  videoUrl: string,
-  audioUrl: string,
+  videoSource: ProxyStreamOptions | string,
+  audioSource: ProxyStreamOptions | string,
   onProgress?: (message: string) => void
 ): Promise<Blob> {
   const { FFmpeg } = await import('@ffmpeg/ffmpeg');
   const { fetchFile, toBlobURL } = await import('@ffmpeg/util');
+
+  const loadStream = async (source: ProxyStreamOptions | string) => {
+    if (typeof source === 'string') {
+      return fetchFile(source);
+    }
+    const blob = await fetchBlobThroughProxy(source);
+    return new Uint8Array(await blob.arrayBuffer());
+  };
 
   const ffmpeg = new FFmpeg();
   ffmpeg.on('log', ({ message }) => {
@@ -25,10 +38,10 @@ export async function mergeVideoAudioInBrowser(
   });
 
   onProgress?.('Downloading video…');
-  await ffmpeg.writeFile('video.mp4', await fetchFile(videoUrl));
+  await ffmpeg.writeFile('video.mp4', await loadStream(videoSource));
 
   onProgress?.('Downloading audio…');
-  await ffmpeg.writeFile('audio.m4a', await fetchFile(audioUrl));
+  await ffmpeg.writeFile('audio.m4a', await loadStream(audioSource));
 
   onProgress?.('Combining video and audio…');
   const copyExit = await ffmpeg.exec([

@@ -19,8 +19,9 @@ import {
   requiresManualDownload,
   isYouTubeUrl,
   normalizeYouTubeUrl,
-  buildProxyDownloadUrl,
   refererForUrl,
+  parseProxyDownloadUrl,
+  fetchBlobThroughProxy,
   type ReadyDownload,
 } from '@/lib/download-client';
 import { mergeVideoAudioInBrowser, downloadBlob } from '@/lib/client-merge';
@@ -110,8 +111,34 @@ export default function Home() {
     }
   }, [url]);
 
-  const offerDownload = (downloadUrl: string, filename: string) => {
+  const offerDownload = async (downloadUrl: string, filename: string) => {
     const absoluteUrl = toAbsoluteDownloadUrl(downloadUrl);
+    const proxyOptions = parseProxyDownloadUrl(absoluteUrl);
+
+    if (proxyOptions) {
+      try {
+        const blob = await fetchBlobThroughProxy({
+          ...proxyOptions,
+          cookiesText,
+        });
+        if (requiresManualDownload()) {
+          setReadyDownload({ url: URL.createObjectURL(blob), filename });
+          requestAnimationFrame(() => {
+            document.querySelector('.analysis-download-btn')?.scrollIntoView({
+              behavior: 'smooth',
+              block: 'center',
+            });
+          });
+        } else {
+          downloadBlob(blob, filename);
+        }
+        return;
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : 'Download failed');
+        return;
+      }
+    }
+
     const started = triggerBrowserDownload(absoluteUrl, filename);
     if (!started) {
       setReadyDownload({ url: absoluteUrl, filename });
@@ -262,24 +289,21 @@ export default function Home() {
           downloadUrl: data.downloadUrl,
         });
         if (data.qualityNotice) setQualityNotice(data.qualityNotice);
-        offerDownload(data.downloadUrl, `${title}.${ext}`);
+        await offerDownload(data.downloadUrl, `${title}.${ext}`);
         return;
       }
 
       if (data.clientMerge && data.videoUrl && data.audioUrl) {
         const mergeFilename = data.filename || `${title}.mp4`;
         const pageReferer = refererForUrl(info.webpage_url || cleaned);
-        const videoProxy = toAbsoluteDownloadUrl(
-          buildProxyDownloadUrl(data.videoUrl, 'video.mp4', data.referer || pageReferer)
-        );
-        const audioProxy = toAbsoluteDownloadUrl(
-          buildProxyDownloadUrl(data.audioUrl, 'audio.m4a', data.referer || pageReferer)
-        );
+        const referer = data.referer || pageReferer;
+        const videoSource = { streamUrl: data.videoUrl, referer, cookiesText };
+        const audioSource = { streamUrl: data.audioUrl, referer, cookiesText };
 
         setQualityNotice(data.qualityNotice || 'Combining video and audio in your browser…');
 
         try {
-          const blob = await mergeVideoAudioInBrowser(videoProxy, audioProxy, (msg) => {
+          const blob = await mergeVideoAudioInBrowser(videoSource, audioSource, (msg) => {
             setQualityNotice(msg);
           });
           setDownloading(false);
